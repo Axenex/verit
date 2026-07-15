@@ -17,7 +17,7 @@ import { os } from '../../../../common/helpers/systemInfo.js'
 import { IconLoading } from '../sidebar-tsx/SidebarChat.js'
 import { ToolApprovalType, toolApprovalTypes } from '../../../../common/toolsServiceTypes.js'
 import Severity from '../../../../../../../base/common/severity.js'
-import { getModelCapabilities, modelOverrideKeys, ModelOverrides } from '../../../../common/modelCapabilities.js';
+import { getModelCapabilities, modelOverrideKeys, ModelOverrides, ollamaRecommendedModels } from '../../../../common/modelCapabilities.js';
 import { TransferEditorType, TransferFilesInfo } from '../../../extensionTransferTypes.js';
 import { MCPServer } from '../../../../common/mcpServiceTypes.js';
 import { useMCPServiceState } from '../util/services.js';
@@ -821,17 +821,27 @@ const FastApplyMethodDropdown = () => {
 
 
 export const OllamaSetupInstructions = ({ sayWeAutoDetect }: { sayWeAutoDetect?: boolean }) => {
+	// slug used by the ollama.com model library (drop the ":tag" suffix), e.g. 'qwen2.5-coder:1.5b' -> 'qwen2.5-coder'
+	const librarySlugOfModel = (modelName: string) => modelName.split(':')[0]
 	return <div className='prose-p:my-0 prose-ol:list-decimal prose-p:py-0 prose-ol:my-0 prose-ol:py-0 prose-span:my-0 prose-span:py-0 text-void-fg-3 text-sm list-decimal select-text'>
 		<div className=''><ChatMarkdownRender string={`Ollama Setup Instructions`} chatMessageLocation={undefined} /></div>
-		<div className=' pl-6'><ChatMarkdownRender string={`1. Download [Ollama](https://ollama.com/download).`} chatMessageLocation={undefined} /></div>
+		<div className=' pl-6'><ChatMarkdownRender string={`1. Download [Ollama](https://ollama.com/download) and run it on this desktop.`} chatMessageLocation={undefined} /></div>
 		<div className=' pl-6'><ChatMarkdownRender string={`2. Open your terminal.`} chatMessageLocation={undefined} /></div>
 		<div
 			className='pl-6 flex items-center w-fit'
 			data-tooltip-id='void-tooltip-ollama-settings'
 		>
-			<ChatMarkdownRender string={`3. Run \`ollama pull your_model\` to install a model.`} chatMessageLocation={undefined} />
+			<ChatMarkdownRender string={`3. Run \`ollama pull your_model\` to install a model, or pick a recommended coding model below.`} chatMessageLocation={undefined} />
 		</div>
-		{sayWeAutoDetect && <div className=' pl-6'><ChatMarkdownRender string={`Void automatically detects locally running models and enables them.`} chatMessageLocation={undefined} /></div>}
+		<div className=' pl-6 mt-1'><ChatMarkdownRender string={`Recommended for local coding:`} chatMessageLocation={undefined} /></div>
+		<div className=' pl-6'>
+			{ollamaRecommendedModels.map((modelName) => (
+				<div key={modelName} className='flex items-center gap-2'>
+					<ChatMarkdownRender string={`- \`ollama pull ${modelName}\` ([details](https://ollama.com/library/${librarySlugOfModel(modelName)}))`} chatMessageLocation={undefined} />
+				</div>
+			))}
+		</div>
+		{sayWeAutoDetect && <div className=' pl-6 mt-1'><ChatMarkdownRender string={`Void automatically detects locally running models and enables them — no restart needed.`} chatMessageLocation={undefined} /></div>}
 	</div>
 }
 
