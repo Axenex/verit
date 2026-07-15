@@ -106,6 +106,24 @@ const newOpenAICompatibleSDK = async ({ settingsOfProvider, providerName, includ
 			...commonPayloadOpts,
 		})
 	}
+	else if (providerName === 'godmode') {
+		// G0DM0D3.ai exposes a drop-in OpenAI-compatible endpoint (defaults to https://godmod3.ai/v1,
+		// or a self-hosted server). Auth is a Bearer "godmode" key. https://github.com/elder-plinius/G0DM0D3/blob/main/API.md
+		const thisConfig = settingsOfProvider[providerName]
+		let baseURL = thisConfig.endpoint || defaultProviderSettings.godmode.endpoint
+		// Normalize: make sure we end with "/v1" (users often paste just the host)
+		if (!baseURL.endsWith('/v1'))
+			baseURL = baseURL.replace(/\/+$/, '') + '/v1'
+		return new OpenAI({
+			baseURL,
+			apiKey: thisConfig.apiKey,
+			defaultHeaders: {
+				'HTTP-Referer': 'https://voideditor.com',
+				'X-Title': 'Void',
+			},
+			...commonPayloadOpts,
+		})
+	}
 	else if (providerName === 'googleVertex') {
 		// https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/call-vertex-using-openai-library
 		const thisConfig = settingsOfProvider[providerName]
@@ -891,6 +909,11 @@ export const sendLLMMessageToProviderImplementation = {
 		list: null,
 	},
 	openRouter: {
+		sendChat: (params) => _sendOpenAICompatibleChat(params),
+		sendFIM: (params) => _sendOpenAICompatibleFIM(params),
+		list: null,
+	},
+	godmode: {
 		sendChat: (params) => _sendOpenAICompatibleChat(params),
 		sendFIM: (params) => _sendOpenAICompatibleFIM(params),
 		list: null,

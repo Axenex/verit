@@ -28,6 +28,10 @@ export const defaultProviderSettings = {
 	openRouter: {
 		apiKey: '',
 	},
+	godmode: { // G0DM0D3.ai - OpenAI-compatible multi-model gateway (https://godmod3.ai), routes through OpenRouter
+		apiKey: '',
+		endpoint: 'https://godmod3.ai/v1',
+	},
 	openAICompatible: {
 		endpoint: '',
 		apiKey: '',
@@ -139,6 +143,14 @@ export const defaultModelsOfProvider = {
 		'llama-3.3-70b-versatile',
 		'llama-3.1-8b-instant',
 		// 'qwen-2.5-coder-32b', // preview mode (experimental)
+	],
+	godmode: [ // G0DM0D3.ai - virtual ULTRAPLINIAN racing models + individual OpenRouter model IDs (https://github.com/elder-plinius/G0DM0D3/blob/main/API.md)
+		'ultraplinian/fast',
+		'anthropic/claude-sonnet-4',
+		'anthropic/claude-3.5-sonnet',
+		'openai/gpt-4o',
+		'deepseek/deepseek-r1',
+		'qwen/qwen-2.5-coder-32b-instruct',
 	],
 	mistral: [ // https://docs.mistral.ai/getting-started/models/models_overview/
 		'codestral-latest',
@@ -1447,6 +1459,67 @@ const openRouterSettings: VoidStaticProviderInfo = {
 }
 
 
+// ---------------- G0DM0D3 (godmode) ----------------
+// G0DM0D3.ai exposes an OpenAI-compatible gateway that proxies to OpenRouter. It adds "virtual"
+// ULTRAPLINIAN racing models (ultraplinian/fast|standard|smart|full) on top of the normal
+// OpenRouter model catalog. Individual models are recognized via the fallback below.
+const godmodeModelOptions = {
+	'ultraplinian/fast': {
+		contextWindow: 128_000,
+		reservedOutputTokenSpace: null,
+		cost: { input: 0, output: 0 }, // usage-based via OpenRouter, not known ahead of time
+		downloadable: false,
+		supportsFIM: false,
+		supportsSystemMessage: 'system-role',
+		reasoningCapabilities: false,
+	},
+	'ultraplinian/standard': {
+		contextWindow: 128_000,
+		reservedOutputTokenSpace: null,
+		cost: { input: 0, output: 0 },
+		downloadable: false,
+		supportsFIM: false,
+		supportsSystemMessage: 'system-role',
+		reasoningCapabilities: false,
+	},
+	'ultraplinian/smart': {
+		contextWindow: 128_000,
+		reservedOutputTokenSpace: null,
+		cost: { input: 0, output: 0 },
+		downloadable: false,
+		supportsFIM: false,
+		supportsSystemMessage: 'system-role',
+		reasoningCapabilities: false,
+	},
+	'ultraplinian/full': {
+		contextWindow: 128_000,
+		reservedOutputTokenSpace: null,
+		cost: { input: 0, output: 0 },
+		downloadable: false,
+		supportsFIM: false,
+		supportsSystemMessage: 'system-role',
+		reasoningCapabilities: false,
+	},
+} as const satisfies Record<string, VoidStaticModelInfo>
+
+const godmodeSettings: VoidStaticProviderInfo = {
+	modelOptions: godmodeModelOptions,
+	modelOptionsFallback: (modelName) => {
+		// individual models are OpenRouter IDs (e.g. anthropic/claude-3.5-sonnet), so reuse the
+		// generic fallback and normalize gemini-style tools to openai-style like OpenRouter does.
+		const res = extensiveModelOptionsFallback(modelName)
+		if (res?.specialToolFormat === 'gemini-style') {
+			res.specialToolFormat = 'openai-style'
+		}
+		return res
+	},
+	providerReasoningIOSettings: {
+		input: { includeInPayload: openAICompatIncludeInPayloadReasoning },
+		output: { nameOfFieldInDelta: 'reasoning' },
+	},
+}
+
+
 
 
 // ---------------- model settings of everything above ----------------
@@ -1463,6 +1536,7 @@ const modelSettingsOfProvider: { [providerName in ProviderName]: VoidStaticProvi
 
 	// open source models + providers (mixture of everything)
 	openRouter: openRouterSettings,
+	godmode: godmodeSettings,
 	vLLM: vLLMSettings,
 	ollama: ollamaSettings,
 	openAICompatible: openaiCompatible,
