@@ -1,0 +1,91 @@
+name: Build Windows
+
+# Builds a portable Void win32-x64 zip on a Windows runner and uploads it as an
+# Actions artifact. Does not create a GitHub Release.
+#
+# Triggered by push to this workflow's feature branches, or manually via
+# workflow_dispatch. Requires Visual Studio / MSVC on windows-2022 (provided
+# by the GitHub-hosted runner image).
+
+on:
+  push:
+    branches:
+      - 'Axen/windows-build-*'
+    paths:
+      - '.github/workflows/build-windows.yml'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'product.json'
+      - 'src/**'
+      - 'build/**'
+      - 'extensions/**'
+      - 'scripts/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  NODE_OPTIONS: '--max-old-space-size=8192'
+  npm_config_build_from_source: 'true'
+
+jobs:
+  build-windows:
+    name: Build win32-x64
+    runs-on: windows-2022
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js from .nvmrc
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install npm dependencies
+        run: npm install
+
+      - name: Build Void React UI
+        run: npm run buildreact
+
+      - name: Download built-in extensions
+        run: npm run download-builtin-extensions
+
+      - name: Build application (vscode-win32-x64)
+        run: npm run gulp vscode-win32-x64
+
+      - name: Package portable zip
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:GITHUB_WORKSPACE '..\VSCode-win32-x64'
+          if (-not (Test-Path $out)) {
+            throw "Expected build output missing: $out"
+          }
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          Compress-Archive -Path (Join-Path $out '*') -DestinationPath (Join-Path 'artifacts' 'Void-win32-x64.zip') -Force
+          Get-Item (Join-Path 'artifacts' 'Void-win32-x64.zip') | Format-List FullName, Length
+
+      - name: Build Windows installer (best-effort)
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          npm run gulp vscode-win32-x64-inno-updater
+          npm run gulp vscode-win32-x64-system-setup
+          npm run gulp vscode-win32-x64-user-setup
+          Get-ChildItem -Recurse -Path '.build\win32-x64' -Filter '*.exe' -ErrorAction SilentlyContinue | ForEach-Object {
+            Copy-Item $_.FullName (Join-Path 'artifacts' $_.Name) -Force
+          }
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: void-win32-x64
+          path: artifacts/*
+          if-no-files-found: error
+          retention-days: 14
