@@ -1,0 +1,132 @@
+# GitLab CI/CD pipeline to build Void for Linux, Windows, and macOS and publish the
+# artifacts to a GitLab Release (and the project's generic Package Registry).
+#
+# Trigger it by pushing a version tag, e.g.:
+#   git tag v1.4.11 && git push <gitlab-remote> v1.4.11
+#
+# Requirements / notes:
+# - Targets GitLab.com SaaS runners. The runner `tags:` below select the OS:
+#     * Linux   -> default shared runners (via the `node:` image)
+#     * Windows -> saas-windows-medium-amd64
+#     * macOS   -> saas-macos-medium-m1  (macOS SaaS runners require a paid plan)
+#   For a self-managed GitLab, replace the tags with your own runner tags.
+# - Node is pinned to 20.18.2 (see .nvmrc). Native modules are compiled from source
+#   against the Electron headers (see .npmrc), so each runner needs a C/C++ toolchain
+#   + Python. Linux installs them below; the Windows/macOS SaaS images ship with VS
+#   Build Tools / Xcode, but this is the most likely area to need tweaks on first run.
+# - The portable archives contain the real runnable app (Void.exe inside the Windows zip).
+#   A signed installer needs code-signing certs and is out of scope here.
+
+stages:
+  - build
+  - release
+
+variables:
+  NODE_OPTIONS: "--max-old-space-size=8192"
+  npm_config_build_from_source: "true"
+  GIT_DEPTH: "1"
+  PKG_BASE: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/void/${CI_COMMIT_TAG}"
+
+# ------------------------------------------------------------------ Linux
+build:linux:
+  stage: build
+  image: node:20.18.2-bookworm
+  rules:
+    - if: $CI_COMMIT_TAG
+  before_script:
+    - apt-get update
+    - apt-get install -y build-essential g++ libx11-dev libxkbfile-dev libsecret-1-dev libkrb5-dev fakeroot rpm python3 python-is-python3 curl
+  script:
+    - npm install
+    - npm run buildreact
+    - npm run download-builtin-extensions
+    - npm run gulp vscode-linux-x64
+    - mkdir -p dist
+    - tar -czf dist/Void-linux-x64.tar.gz -C "$CI_PROJECT_DIR/.." VSCode-linux-x64
+    - 'curl --fail --header "JOB-TOKEN: $CI_JOB_TOKEN" --upload-file dist/Void-linux-x64.tar.gz "${PKG_BASE}/Void-linux-x64.tar.gz"'
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 1 week
+
+# ------------------------------------------------------------------ Windows
+build:windows:
+  stage: build
+  tags:
+    - saas-windows-medium-amd64
+  rules:
+    - if: $CI_COMMIT_TAG
+  before_script:
+    - choco install -y nodejs --version=20.18.2
+    - choco install -y python3
+    - refreshenv
+  script:
+    - npm install
+    - npm run buildreact
+    - npm run download-builtin-extensions
+    - npm run gulp vscode-win32-x64
+    - New-Item -ItemType Directory -Force -Path dist
+    - Compress-Archive -Path "$env:CI_PROJECT_DIR\..\VSCode-win32-x64\*" -DestinationPath "dist\Void-win32-x64.zip" -Force
+    # best-effort signed-less Inno Setup installer (.exe)
+    - npm run gulp vscode-win32-x64-inno-updater; if ($LASTEXITCODE -ne 0) { Write-Host "inno-updater step failed (non-fatal)" }
+    - npm run gulp vscode-win32-x64-system-setup; if ($LASTEXITCODE -ne 0) { Write-Host "system-setup step failed (non-fatal)" }
+    - Get-ChildItem -Recurse -Path ".build\win32-x64" -Filter "*.exe" -ErrorAction SilentlyContinue | ForEach-Object { Copy-Item $_.FullName "dist\VoidSetup-x64.exe" }
+    - 'curl.exe --fail --header "JOB-TOKEN: $env:CI_JOB_TOKEN" --upload-file dist\Void-win32-x64.zip "$env:PKG_BASE/Void-win32-x64.zip"'
+    - 'if (Test-Path dist\VoidSetup-x64.exe) { curl.exe --fail --header "JOB-TOKEN: $env:CI_JOB_TOKEN" --upload-file dist\VoidSetup-x64.exe "$env:PKG_BASE/VoidSetup-x64.exe" }'
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 1 week
+
+# ------------------------------------------------------------------ macOS
+build:macos:
+  stage: build
+  image: macos-14-xcode-15
+  tags:
+    - saas-macos-medium-m1
+  rules:
+    - if: $CI_COMMIT_TAG
+  before_script:
+    - brew install node@20
+    - export PATH="/opt/homebrew/opt/node@20/bin:$PATH"
+  script:
+    - export PATH="/opt/homebrew/opt/node@20/bin:$PATH"
+    - npm install
+    - npm run buildreact
+    - npm run download-builtin-extensions
+    - npm run gulp vscode-darwin-arm64
+    - mkdir -p dist
+    - cd "$CI_PROJECT_DIR/../VSCode-darwin-arm64" && zip -ry "$CI_PROJECT_DIR/dist/Void-darwin-arm64.zip" ./*.app && cd "$CI_PROJECT_DIR"
+    - 'curl --fail --header "JOB-TOKEN: $CI_JOB_TOKEN" --upload-file dist/Void-darwin-arm64.zip "${PKG_BASE}/Void-darwin-arm64.zip"'
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 1 week
+
+# ------------------------------------------------------------------ Release
+release:
+  stage: release
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  rules:
+    - if: $CI_COMMIT_TAG
+  needs:
+    - job: build:linux
+      artifacts: false
+    - job: build:windows
+      artifacts: false
+    - job: build:macos
+      artifacts: false
+  script:
+    - echo "Creating release $CI_COMMIT_TAG"
+  release:
+    tag_name: $CI_COMMIT_TAG
+    name: "Void $CI_COMMIT_TAG"
+    description: "Automated build of Void $CI_COMMIT_TAG (Linux / Windows / macOS)."
+    assets:
+      links:
+        - name: "Void-linux-x64.tar.gz"
+          url: "${PKG_BASE}/Void-linux-x64.tar.gz"
+        - name: "Void-win32-x64.zip (contains Void.exe)"
+          url: "${PKG_BASE}/Void-win32-x64.zip"
+        - name: "Void-darwin-arm64.zip"
+          url: "${PKG_BASE}/Void-darwin-arm64.zip"
