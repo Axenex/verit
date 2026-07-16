@@ -1,0 +1,103 @@
+# Void GitLab CI — Node 20.18.2 desktop build/test (AGENTS.md / HOW_TO_CONTRIBUTE.md)
+#
+# Stages:
+#   validate — npm ci, buildreact, compile
+#   test     — Node unit tests against the compiled out/ artifact
+#
+# Intentionally omitted for now:
+#   - Full ESLint (fails on the unchanged baseline per project guidance)
+#   - Browser / smoke tests (heavy; need Electron + Playwright setup)
+#
+# Cache: npm download cache (.npm), keyed by package-lock.json
+# Artifacts: compiled out/ kept briefly for the test job
+
+stages:
+  - validate
+  - test
+
+variables:
+  NODE_OPTIONS: "--max-old-space-size=8192"
+  npm_config_cache: "$CI_PROJECT_DIR/.npm"
+  # Skip heavy optional downloads during dependency install
+  ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+
+default:
+  image: node:20.18.2
+  interruptible: true
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    - if: $CI_COMMIT_BRANCH
+
+# Shared npm cache: local download cache only (not node_modules)
+.npm_cache: &npm_cache
+  key:
+    files:
+      - package-lock.json
+  paths:
+    - .npm/
+
+.linux_node_job:
+  before_script:
+    - apt-get update
+    - apt-get install -y --no-install-recommends
+        build-essential
+        g++
+        pkg-config
+        python3
+        libx11-dev
+        libxkbfile-dev
+        libsecret-1-dev
+        libkrb5-dev
+    - node -v
+    - npm -v
+    - test "$(node -v)" = "v20.18.2"
+
+.validate_npm_ci: &validate_npm_ci |
+  set -e
+  for i in 1 2 3 4 5; do
+    npm ci && break
+    if [ "$i" -eq 5 ]; then
+      echo "npm ci failed too many times" >&2
+      exit 1
+    fi
+    echo "npm ci failed ($i), retrying..."
+    sleep $((i * 5))
+  done
+
+validate:
+  extends: .linux_node_job
+  stage: validate
+  timeout: 2h
+  cache:
+    <<: *npm_cache
+    policy: pull-push
+  script:
+    - *validate_npm_ci
+    - npm run buildreact
+    - npm run compile
+  artifacts:
+    name: "compiled-out-$CI_COMMIT_SHORT_SHA"
+    paths:
+      - out/
+    expire_in: 1 hour
+    when: on_success
+
+test:
+  extends: .linux_node_job
+  stage: test
+  timeout: 30m
+  needs:
+    - job: validate
+      artifacts: true
+  cache:
+    <<: *npm_cache
+    policy: pull
+  script:
+    - *validate_npm_ci
+    - test -d out
+    - npm run test-node
