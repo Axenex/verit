@@ -165,9 +165,23 @@ build:windows:
       Write-Host 'Wrote Directory.Build.props/.targets to disable SpectreMitigation for CI'
   script:
     - |
-      $env:Path = 'C:\nodejs;' + [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [System.Environment]::GetEnvironmentVariable('Path','User')
-    - node -v
-    - npm -v
+      $ErrorActionPreference = 'Stop'
+      # Put Node zip first, then import VS x64 toolset env (fixes LNK1104 DelayImp.lib).
+      $nodePath = 'C:\nodejs'
+      $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+      $installPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+      $vcvars = Join-Path $installPath 'VC\Auxiliary\Build\vcvars64.bat'
+      if (-not (Test-Path $vcvars)) { throw "vcvars64.bat not found: $vcvars" }
+      Write-Host "Loading VS env from $vcvars"
+      cmd /c "`"$vcvars`" && set" | ForEach-Object {
+        if ($_ -match '^(.*?)=(.*)$') {
+          [System.Environment]::SetEnvironmentVariable($matches[1], $matches[2], 'Process')
+        }
+      }
+      $env:Path = "$nodePath;$env:Path"
+      node -v
+      npm -v
+      where.exe link
     # 1) Install Electron headers / local node-gyp (Windows preinstall)
     # 2) npm install without lifecycle scripts (avoids MSB8040 during first gyp build)
     # 3) Patch SpectreMitigation in binding.gyp files
