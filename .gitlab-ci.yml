@@ -203,7 +203,11 @@ build:windows:
         }
       }
     - npm rebuild --build-from-source --ignore-scripts
-    - node build/npm/postinstall.js
+    # Skip remote/ server deps: not needed for desktop vscode-win32-x64, and SaaS
+    # Windows SDK is missing DelayImp.lib (@vscode/deviceid LINK LNK1104).
+    - |
+      $env:VSCODE_SKIP_REMOTE_DEPENDENCIES = '1'
+      node build/npm/postinstall.js
     - npm run buildreact
     - npm run download-builtin-extensions
     - npm run gulp vscode-win32-x64
