@@ -149,26 +149,39 @@ build:windows:
       if (-not $py) { throw 'Python not found on Windows runner PATH' }
       & $py.Source --version
     # SaaS Windows images often cannot modify VS BuildTools (setup.exe no-ops).
-    # Native modules like @vscode/deviceid set SpectreMitigation=Spectre and then
-    # fail with MSB8040. MSBuild picks up Directory.Build.props from the repo root
-    # when compiling under node_modules, so disable Spectre for this CI build only.
+    # Native modules set SpectreMitigation=Spectre in vcxproj (overrides .props).
+    # Directory.Build.targets is imported late and forces SpectreMitigation=false.
     - |
-      $props = @'
+      $xml = @'
       <Project>
         <PropertyGroup>
           <SpectreMitigation>false</SpectreMitigation>
         </PropertyGroup>
       </Project>
       '@
-      Set-Content -Path "$env:CI_PROJECT_DIR\Directory.Build.props" -Value $props.Trim() -Encoding UTF8
-      Write-Host 'Wrote Directory.Build.props to disable SpectreMitigation for CI native builds'
-      Get-Content "$env:CI_PROJECT_DIR\Directory.Build.props"
+      $content = $xml.Trim()
+      Set-Content -Path "$env:CI_PROJECT_DIR\Directory.Build.props" -Value $content -Encoding UTF8
+      Set-Content -Path "$env:CI_PROJECT_DIR\Directory.Build.targets" -Value $content -Encoding UTF8
+      Write-Host 'Wrote Directory.Build.props/.targets to disable SpectreMitigation for CI'
   script:
     - |
       $env:Path = 'C:\nodejs;' + [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [System.Environment]::GetEnvironmentVariable('Path','User')
     - node -v
     - npm -v
-    - npm install
+    # Prefer skipping gyp scripts first, patch Spectre flags, rebuild, then run postinstall.
+    - npm install --ignore-scripts
+    - |
+      $ErrorActionPreference = 'Stop'
+      Get-ChildItem -Path $env:CI_PROJECT_DIR -Recurse -Filter 'binding.gyp' -ErrorAction SilentlyContinue | ForEach-Object {
+        $text = Get-Content -Raw $_.FullName
+        $patched = $text -replace '"SpectreMitigation"\s*:\s*"Spectre"', '"SpectreMitigation": "false"'
+        if ($patched -ne $text) {
+          Set-Content -Path $_.FullName -Value $patched -NoNewline -Encoding utf8
+          Write-Host "Patched $($_.FullName)"
+        }
+      }
+    - npm rebuild --build-from-source
+    - node build/npm/postinstall.js
     - npm run buildreact
     - npm run download-builtin-extensions
     - npm run gulp vscode-win32-x64
