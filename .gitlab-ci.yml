@@ -148,6 +148,25 @@ build:windows:
       $py = Get-Command python, python3, py -ErrorAction SilentlyContinue | Select-Object -First 1
       if (-not $py) { throw 'Python not found on Windows runner PATH' }
       & $py.Source --version
+    # Void/VS Code native modules require Spectre-mitigated MSVC libs (MSB8040 otherwise).
+    - |
+      $ErrorActionPreference = 'Stop'
+      $installPath = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools'
+      $setup = 'C:\Program Files (x86)\Microsoft Visual Studio\Installer\setup.exe'
+      if (-not (Test-Path $setup)) { throw "Visual Studio Installer not found: $setup" }
+      $args = @(
+        'modify',
+        '--installPath', $installPath,
+        '--add', 'Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre',
+        '--add', 'Microsoft.VisualStudio.Component.VC.ATL.Spectre',
+        '--add', 'Microsoft.VisualStudio.Component.VC.ATLMFC.Spectre',
+        '--quiet', '--wait', '--norestart'
+      )
+      Write-Host "Installing Spectre-mitigated VS components..."
+      $p = Start-Process -FilePath $setup -ArgumentList $args -Wait -PassThru
+      # 0 = success, 3010 = success reboot required (OK for CI VMs)
+      if ($p.ExitCode -notin 0, 3010) { throw "VS modify failed with exit code $($p.ExitCode)" }
+      Write-Host "Spectre components installed (exit $($p.ExitCode))"
   script:
     - |
       $env:Path = 'C:\nodejs;' + [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [System.Environment]::GetEnvironmentVariable('Path','User')
