@@ -168,7 +168,12 @@ build:windows:
       $env:Path = 'C:\nodejs;' + [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [System.Environment]::GetEnvironmentVariable('Path','User')
     - node -v
     - npm -v
-    # Prefer skipping gyp scripts first, patch Spectre flags, rebuild, then run postinstall.
+    # 1) Install Electron headers / local node-gyp (Windows preinstall)
+    # 2) npm install without lifecycle scripts (avoids MSB8040 during first gyp build)
+    # 3) Patch SpectreMitigation in binding.gyp files
+    # 4) Rebuild natives with --ignore-scripts so preinstall does not re-run
+    # 5) Run repo postinstall for nested package installs
+    - node build/npm/preinstall.js
     - npm install --ignore-scripts
     - |
       $ErrorActionPreference = 'Stop'
@@ -180,7 +185,7 @@ build:windows:
           Write-Host "Patched $($_.FullName)"
         }
       }
-    - npm rebuild --build-from-source
+    - npm rebuild --build-from-source --ignore-scripts
     - node build/npm/postinstall.js
     - npm run buildreact
     - npm run download-builtin-extensions
