@@ -148,48 +148,21 @@ build:windows:
       $py = Get-Command python, python3, py -ErrorAction SilentlyContinue | Select-Object -First 1
       if (-not $py) { throw 'Python not found on Windows runner PATH' }
       & $py.Source --version
-    # Void/VS Code native modules require Spectre-mitigated MSVC libs (MSB8040 otherwise).
+    # SaaS Windows images often cannot modify VS BuildTools (setup.exe no-ops).
+    # Native modules like @vscode/deviceid set SpectreMitigation=Spectre and then
+    # fail with MSB8040. MSBuild picks up Directory.Build.props from the repo root
+    # when compiling under node_modules, so disable Spectre for this CI build only.
     - |
-      $ErrorActionPreference = 'Stop'
-      $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-      $setup = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\setup.exe"
-      if (-not (Test-Path $vswhere)) { Write-Error 'vswhere.exe not found'; exit 1 }
-      if (-not (Test-Path $setup)) { Write-Error 'setup.exe not found'; exit 1 }
-      $installPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-      if (-not $installPath) { Write-Error 'Visual Studio C++ toolset not found'; exit 1 }
-      Write-Host "VS installPath=$installPath"
-
-      function Test-SpectreLibs {
-        param([string]$Root)
-        $msvc = Get-ChildItem (Join-Path $Root 'VC\Tools\MSVC') -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
-        if (-not $msvc) { return $false }
-        return (Test-Path (Join-Path $msvc.FullName 'lib\spectre\x64'))
-      }
-
-      if (Test-SpectreLibs $installPath) {
-        Write-Host 'Spectre-mitigated libs already present'
-      } else {
-        Write-Host 'Installing Spectre-mitigated VS components via setup.exe...'
-        # Call setup.exe directly so LASTEXITCODE is reliable (Start-Process returned 87).
-        & $setup modify `
-          --installPath $installPath `
-          --add Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre `
-          --add Microsoft.VisualStudio.Component.VC.ATL.Spectre `
-          --add Microsoft.VisualStudio.Component.VC.ATLMFC.Spectre `
-          --quiet --wait --norestart
-        $code = $LASTEXITCODE
-        Write-Host "setup.exe exit=$code"
-        if ($code -notin 0, 3010) {
-          Write-Host 'setup.exe failed; trying Chocolatey workload params fallback...'
-          choco install visualstudio2022-workload-vctools -y --package-parameters "--add Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre --add Microsoft.VisualStudio.Component.VC.ATL.Spectre --add Microsoft.VisualStudio.Component.VC.ATLMFC.Spectre --passive --norestart"
-          if ($LASTEXITCODE -ne 0) { Write-Error "Chocolatey Spectre install failed ($LASTEXITCODE)"; exit 1 }
-        }
-        if (-not (Test-SpectreLibs $installPath)) {
-          Write-Error 'Spectre libs still missing after install'
-          exit 1
-        }
-        Write-Host 'Spectre-mitigated libs installed'
-      }
+      $props = @'
+      <Project>
+        <PropertyGroup>
+          <SpectreMitigation>false</SpectreMitigation>
+        </PropertyGroup>
+      </Project>
+      '@
+      Set-Content -Path "$env:CI_PROJECT_DIR\Directory.Build.props" -Value $props.Trim() -Encoding UTF8
+      Write-Host 'Wrote Directory.Build.props to disable SpectreMitigation for CI native builds'
+      Get-Content "$env:CI_PROJECT_DIR\Directory.Build.props"
   script:
     - |
       $env:Path = 'C:\nodejs;' + [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [System.Environment]::GetEnvironmentVariable('Path','User')
