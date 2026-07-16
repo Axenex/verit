@@ -173,7 +173,10 @@ build:windows:
     # 3) Patch SpectreMitigation in binding.gyp files
     # 4) Rebuild natives with --ignore-scripts so preinstall does not re-run
     # 5) Run repo postinstall for nested package installs
-    - node build/npm/preinstall.js
+    # preinstall.js expects npm_execpath (set during npm lifecycle hooks).
+    - |
+      $env:npm_execpath = (Get-Command npm.cmd).Source
+      node build/npm/preinstall.js
     - npm install --ignore-scripts
     - |
       $ErrorActionPreference = 'Stop'
