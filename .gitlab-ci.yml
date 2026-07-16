@@ -1,29 +1,32 @@
-# Void GitLab CI — Node 20.18.2 desktop build/test (AGENTS.md / HOW_TO_CONTRIBUTE.md)
+# Void GitLab CI — Node 20.18.2
 #
 # Stages:
-#   validate — npm ci, buildreact, compile
-#   test     — Node unit tests against the compiled out/ artifact
+#   validate — Linux: npm ci, buildreact, compile
+#   test     — Linux: Node unit tests against out/
+#   package  — Windows: portable Void win32-x64 zip (SaaS Windows runner)
 #
 # Intentionally omitted for now:
 #   - Full ESLint (fails on the unchanged baseline per project guidance)
 #   - Browser / smoke tests (heavy; need Electron + Playwright setup)
 #
 # Cache: npm download cache (.npm), keyed by package-lock.json
-# Artifacts: compiled out/ kept briefly for the test job
+# Windows: requires GitLab.com SaaS Windows runners (tag saas-windows-medium-amd64).
+# Push this branch to a GitLab project remote to run the pipeline.
 
 stages:
   - validate
   - test
+  - package
 
 variables:
   NODE_OPTIONS: "--max-old-space-size=8192"
   npm_config_cache: "$CI_PROJECT_DIR/.npm"
-  # Skip heavy optional downloads during dependency install
+  # Skip heavy optional downloads during Linux validate/test installs.
+  # Windows package job overrides ELECTRON_SKIP_BINARY_DOWNLOAD.
   ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
   PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
 
 default:
-  image: node:20.18.2
   interruptible: true
 
 workflow:
@@ -32,6 +35,7 @@ workflow:
     - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
       when: never
     - if: $CI_COMMIT_BRANCH
+    - if: $CI_COMMIT_TAG
 
 # Shared npm cache: local download cache only (not node_modules)
 .npm_cache: &npm_cache
@@ -42,6 +46,7 @@ workflow:
     - .npm/
 
 .linux_node_job:
+  image: node:20.18.2
   before_script:
     - apt-get update
     - apt-get install -y --no-install-recommends
@@ -101,3 +106,51 @@ test:
     - *validate_npm_ci
     - test -d out
     - npm run test-node
+
+# ------------------------------------------------------------------ Windows portable app
+# Runs on GitLab.com hosted Windows runners (not Docker). Independent of Linux jobs.
+build:windows:
+  stage: package
+  tags:
+    - saas-windows-medium-amd64
+  needs: []
+  timeout: 3h
+  variables:
+    ELECTRON_SKIP_BINARY_DOWNLOAD: "0"
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+    npm_config_build_from_source: "true"
+  rules:
+    - if: $CI_COMMIT_BRANCH =~ /^Axen\/gitlab-windows-build-/
+    - if: $CI_COMMIT_TAG
+    - if: $CI_PIPELINE_SOURCE == "web"
+      when: manual
+      allow_failure: true
+  before_script:
+    - choco install -y nodejs --version=20.18.2
+    - choco install -y python3
+    - refreshenv
+    - node -v
+    - npm -v
+  script:
+    - npm install
+    - npm run buildreact
+    - npm run download-builtin-extensions
+    - npm run gulp vscode-win32-x64
+    - New-Item -ItemType Directory -Force -Path dist | Out-Null
+    - |
+      $out = Join-Path $env:CI_PROJECT_DIR '..\VSCode-win32-x64'
+      if (-not (Test-Path $out)) { throw "Expected build output missing: $out" }
+      Compress-Archive -Path (Join-Path $out '*') -DestinationPath 'dist\Void-win32-x64.zip' -Force
+      Get-Item 'dist\Void-win32-x64.zip' | Format-List FullName, Length
+    # Best-effort Inno Setup installers (non-fatal)
+    - npm run gulp vscode-win32-x64-inno-updater; if ($LASTEXITCODE -ne 0) { Write-Host "inno-updater failed (non-fatal)" }
+    - npm run gulp vscode-win32-x64-system-setup; if ($LASTEXITCODE -ne 0) { Write-Host "system-setup failed (non-fatal)" }
+    - npm run gulp vscode-win32-x64-user-setup; if ($LASTEXITCODE -ne 0) { Write-Host "user-setup failed (non-fatal)" }
+    - if (Test-Path '.build\win32-x64\system-setup\VSCodeSetup.exe') { Copy-Item '.build\win32-x64\system-setup\VSCodeSetup.exe' 'dist\VoidSetup-x64.exe' }
+    - if (Test-Path '.build\win32-x64\user-setup\VSCodeSetup.exe') { Copy-Item '.build\win32-x64\user-setup\VSCodeSetup.exe' 'dist\VoidUserSetup-x64.exe' }
+  artifacts:
+    name: "void-win32-x64-$CI_COMMIT_SHORT_SHA"
+    paths:
+      - dist/
+    expire_in: 1 week
+    when: on_success
