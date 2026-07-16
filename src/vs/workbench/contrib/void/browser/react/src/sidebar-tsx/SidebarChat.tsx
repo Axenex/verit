@@ -3,7 +3,7 @@
  *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
  *--------------------------------------------------------------------------------------*/
 
-import React, { ButtonHTMLAttributes, FormEvent, FormHTMLAttributes, Fragment, KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { ButtonHTMLAttributes, FormEvent, FormHTMLAttributes, KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 
 import { useAccessor, useChatThreadsState, useChatThreadsStreamState, useSettingsState, useActiveURI, useCommandBarState, useFullChatThreadsStreamState } from '../util/services.js';
@@ -32,6 +32,7 @@ import { builtinToolNames, isABuiltinToolName, MAX_FILE_CHARS_PAGE, MAX_TERMINAL
 import { RawToolCallObj } from '../../../../common/sendLLMMessageTypes.js';
 import ErrorBoundary from './ErrorBoundary.js';
 import { ToolApprovalTypeSwitch } from '../void-settings-tsx/Settings.js';
+import { RepoBranchHeader } from './RepoBranchHeader.js';
 
 import { persistentTerminalNameOfId } from '../../../terminalToolService.js';
 import { removeMCPToolNamePrefix } from '../../../../common/mcpServiceTypes.js';
@@ -3176,11 +3177,17 @@ export const SidebarChat = () => {
 
 
 	return (
-		<Fragment key={threadId} // force rerender when change thread
+		<div key={threadId} // force rerender when change thread
+			className='w-full h-full flex flex-col overflow-hidden'
 		>
-			{isLandingPage ?
-				landingPageContent
-				: threadPageContent}
-		</Fragment>
+			<ErrorBoundary>
+				<RepoBranchHeader />
+			</ErrorBoundary>
+			<div className='w-full flex-1 min-h-0'>
+				{isLandingPage ?
+					landingPageContent
+					: threadPageContent}
+			</div>
+		</div>
 	)
 }

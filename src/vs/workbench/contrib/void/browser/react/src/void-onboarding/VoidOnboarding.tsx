@@ -225,7 +225,7 @@ const AddProvidersPage = ({ pageIndex, setPageIndex }: { pageIndex: number, setP
 						<SettingsForProvider providerName={providerName} showProviderTitle={false} showProviderSuggestions={true} />
 
 					</div>
-					{providerName === 'ollama' && <OllamaSetupInstructions />}
+					{providerName === 'ollama' && <OllamaSetupInstructions sayWeAutoDetect={true} />}
 				</div>
 			))}
 
