@@ -126,11 +126,15 @@ build:windows:
       when: manual
       allow_failure: true
   before_script:
-    - choco install -y nodejs --version=20.18.2
-    - choco install -y python3
+    # SaaS Windows images may ship a newer Node; force the repo pin from .nvmrc.
+    - choco install -y nodejs --version=20.18.2 --allow-downgrade --force
+    - choco install -y python3 --force
     - refreshenv
+    - |
+      $env:Path = [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [System.Environment]::GetEnvironmentVariable('Path','User')
     - node -v
     - npm -v
+    - if ((node -v) -ne 'v20.18.2') { throw "Expected Node v20.18.2, got $(node -v)" }
   script:
     - npm install
     - npm run buildreact
