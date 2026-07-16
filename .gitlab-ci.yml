@@ -128,16 +128,31 @@ build:windows:
       when: manual
       allow_failure: true
   before_script:
-    # SaaS Windows images may ship a newer Node; force the repo pin from .nvmrc.
-    - choco install -y nodejs --version=20.18.2 --allow-downgrade --force
-    - choco install -y python3 --force
-    - refreshenv
+    # Avoid Chocolatey MSI downgrades (exit 1603 on SaaS images that ship Node 21).
+    # Install the .nvmrc pin from the official Windows zip onto PATH for this job.
     - |
-      $env:Path = [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [System.Environment]::GetEnvironmentVariable('Path','User')
+      $ErrorActionPreference = 'Stop'
+      $ver = '20.18.2'
+      $zip = Join-Path $env:TEMP "node-v$ver-win-x64.zip"
+      $dest = 'C:\nodejs'
+      Invoke-WebRequest -Uri "https://nodejs.org/dist/v$ver/node-v$ver-win-x64.zip" -OutFile $zip
+      if (Test-Path $dest) { Remove-Item -Recurse -Force $dest }
+      if (Test-Path "C:\node-v$ver-win-x64") { Remove-Item -Recurse -Force "C:\node-v$ver-win-x64" }
+      Expand-Archive -Path $zip -DestinationPath 'C:\' -Force
+      Rename-Item -Path "C:\node-v$ver-win-x64" -NewName 'nodejs'
+      $env:Path = "$dest;" + [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [System.Environment]::GetEnvironmentVariable('Path','User')
+      [Environment]::SetEnvironmentVariable('Path', $env:Path, 'Process')
+      node -v
+      npm -v
+      if ((node -v) -ne "v$ver") { throw "Expected Node v$ver, got $(node -v)" }
+      $py = Get-Command python, python3, py -ErrorAction SilentlyContinue | Select-Object -First 1
+      if (-not $py) { throw 'Python not found on Windows runner PATH' }
+      & $py.Source --version
+  script:
+    - |
+      $env:Path = 'C:\nodejs;' + [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [System.Environment]::GetEnvironmentVariable('Path','User')
     - node -v
     - npm -v
-    - 'if ((node -v) -ne ''v20.18.2'') { throw "Expected Node v20.18.2, got $(node -v)" }'
-  script:
     - npm install
     - npm run buildreact
     - npm run download-builtin-extensions
