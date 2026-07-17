@@ -27,6 +27,10 @@ import './voidSettingsPane.js'
 
 // register css
 import './media/void.css'
+import './media/veritide-startup.css'
+
+// VSC-II startup splash (every launch)
+import './veritideStartupSplash.js'
 
 // update (frontend part, also see platform/)
 import './voidUpdateActions.js'
