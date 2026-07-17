@@ -24,6 +24,13 @@ const issPath = path.join(__dirname, 'win32', 'code.iss');
 const innoSetupPath = path.join(path.dirname(path.dirname(require.resolve('innosetup'))), 'bin', 'ISCC.exe');
 const signWin32Path = path.join(repoPath, 'build', 'azure-pipelines', 'common', 'sign-win32');
 
+// On non-Windows hosts, ISCC.exe is run through Wine. Wine maps the Unix root
+// to the Z: drive, so absolute Unix paths must be rewritten to Windows-style
+// Z:\ paths before being handed to the Inno Setup compiler (a leading `/`
+// would otherwise be parsed as an ISCC command-line switch).
+const toInnoPath = (/** @type {string} */ p) =>
+	process.platform === 'win32' || !path.isAbsolute(p) ? p : 'Z:' + p.replace(/\//g, '\\');
+
 function packageInnoSetup(iss, options, cb) {
 	options = options || {};
 
@@ -41,14 +48,17 @@ function packageInnoSetup(iss, options, cb) {
 
 	keys.forEach(key => assert(typeof definitions[key] === 'string', `Missing value for '${key}' in Inno Setup package step`));
 
-	const defs = keys.map(key => `/d${key}=${definitions[key]}`);
+	const defs = keys.map(key => `/d${key}=${toInnoPath(definitions[key])}`);
 	const args = [
-		iss,
+		toInnoPath(iss),
 		...defs,
 		`/sesrp=node ${signWin32Path} $f`
 	];
 
-	cp.spawn(innoSetupPath, args, { stdio: ['ignore', 'inherit', 'inherit'] })
+	const command = process.platform === 'win32' ? innoSetupPath : 'wine';
+	const commandArgs = process.platform === 'win32' ? args : [innoSetupPath, ...args];
+
+	cp.spawn(command, commandArgs, { stdio: ['ignore', 'inherit', 'inherit'] })
 		.on('error', cb)
 		.on('exit', code => {
 			if (code === 0) {

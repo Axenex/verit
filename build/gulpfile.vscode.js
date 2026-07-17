@@ -451,8 +451,20 @@ function patchWin32DependenciesTask(destinationFolderName) {
 
 		await Promise.all(deps.map(async dep => {
 			const basename = path.basename(dep);
+			const depPath = path.join(cwd, dep);
 
-			await rcedit(path.join(cwd, dep), {
+			// When cross-packaging from a non-Windows host, node_modules may
+			// contain host-native (non-PE) .node binaries which rcedit cannot
+			// patch. Skip anything without the PE 'MZ' magic header.
+			const fd = await fs.promises.open(depPath, 'r');
+			const header = Buffer.alloc(2);
+			await fd.read(header, 0, 2, 0);
+			await fd.close();
+			if (header.toString('latin1') !== 'MZ') {
+				return;
+			}
+
+			await rcedit(depPath, {
 				'file-version': baseVersion,
 				'version-string': {
 					'CompanyName': 'Microsoft Corporation',
