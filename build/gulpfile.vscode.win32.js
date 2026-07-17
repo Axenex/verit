@@ -18,11 +18,19 @@ const vfs = require('vinyl-fs');
 const rcedit = require('rcedit');
 
 const repoPath = path.dirname(__dirname);
-const buildPath = (/** @type {string} */ arch) => path.join(path.dirname(repoPath), `VSCode-win32-${arch}`);
+const buildPath = (/** @type {string} */ arch) => path.join(process.env.VSCODE_BUILD_ROOT || path.dirname(repoPath), `VSCode-win32-${arch}`);
 const setupDir = (/** @type {string} */ arch, /** @type {string} */ target) => path.join(repoPath, '.build', `win32-${arch}`, `${target}-setup`);
 const issPath = path.join(__dirname, 'win32', 'code.iss');
 const innoSetupPath = path.join(path.dirname(path.dirname(require.resolve('innosetup'))), 'bin', 'ISCC.exe');
 const signWin32Path = path.join(repoPath, 'build', 'azure-pipelines', 'common', 'sign-win32');
+
+function toWinePath(filePath) {
+	if (process.platform === 'win32') {
+		return filePath;
+	}
+	const resolved = path.resolve(filePath).replace(/\\/g, '/');
+	return `Z:${resolved}`;
+}
 
 function packageInnoSetup(iss, options, cb) {
 	options = options || {};
@@ -41,14 +49,21 @@ function packageInnoSetup(iss, options, cb) {
 
 	keys.forEach(key => assert(typeof definitions[key] === 'string', `Missing value for '${key}' in Inno Setup package step`));
 
-	const defs = keys.map(key => `/d${key}=${definitions[key]}`);
+	const pathKeys = new Set(['SourceDir', 'RepoDir', 'OutputDir', 'ProductJsonPath', 'AppxPackage']);
+	const defs = keys.map(key => {
+		const value = pathKeys.has(key) && process.platform !== 'win32' ? toWinePath(definitions[key]) : definitions[key];
+		return `/d${key}=${value}`;
+	});
 	const args = [
-		iss,
+		process.platform === 'win32' ? iss : toWinePath(iss),
 		...defs,
 		`/sesrp=node ${signWin32Path} $f`
 	];
 
-	cp.spawn(innoSetupPath, args, { stdio: ['ignore', 'inherit', 'inherit'] })
+	const command = process.platform === 'win32' ? innoSetupPath : 'wine';
+	const spawnArgs = process.platform === 'win32' ? args : [innoSetupPath, ...args];
+
+	cp.spawn(command, spawnArgs, { stdio: ['ignore', 'inherit', 'inherit'] })
 		.on('error', cb)
 		.on('exit', code => {
 			if (code === 0) {

@@ -61,3 +61,19 @@ this cloud VM.
   ~11s, exits 0. Filter with `npm run test-node -- --grep <pattern>`.
 - `npm run test-browser` / `npm run smoketest` — browser/electron and smoke tests (heavier;
   `test-browser` runs `playwright install` first).
+
+### Windows installer (.exe) on this Linux cloud VM
+- Production Windows installers require a **Windows** build host (GitLab `package:win32-x64` job or
+  GitHub Actions `release.yml` on `windows-2022`). GitHub Actions may be unavailable if the account
+  has billing issues.
+- For local experimentation on this VM, set `VSCODE_BUILD_ROOT` to a writable parent directory
+  (e.g. `export VSCODE_BUILD_ROOT=$HOME/dev`) so gulp output lands in `$VSCODE_BUILD_ROOT/VSCode-win32-x64`
+  instead of `/VSCode-win32-x64` at the filesystem root.
+- Build sequence: `npm run buildreact` → `npm run download-builtin-extensions` →
+  `npm run gulp vscode-win32-x64` (may warn on `rcedit` under Wine; the app bundle still packages) →
+  copy `build/win32/inno_updater.exe` + `vcruntime140.dll` into `tools/` →
+  `npm run gulp vscode-win32-x64-system-setup` (and/or `-user-setup`). Requires `wine` + `wine32:i386`
+  (`dpkg --add-architecture i386 && apt-get install wine wine32:i386`).
+- Installer output: `.build/win32-x64/system-setup/VoidSetup.exe` (~106 MB). Test under Wine with a
+  fresh prefix: `WINEPREFIX=~/.wine-void-install wine dist/VoidSetup-x64-system.exe /SILENT /DIR=C:\\Void`.
+  A full native Windows install (Start Menu, file associations, auto-update) only works on real Windows.
