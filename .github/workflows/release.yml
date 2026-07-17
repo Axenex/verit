@@ -84,32 +84,62 @@ jobs:
       - name: Build Void React UI
         run: npm run buildreact
 
+      - name: Verify Void React bundles
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $reactOut = Join-Path $env:GITHUB_WORKSPACE 'src\vs\workbench\contrib\void\browser\react\out'
+          $entries = @(
+            'sidebar-tsx\index.js',
+            'void-settings-tsx\index.js',
+            'void-onboarding\index.js',
+            'quick-edit-tsx\index.js',
+            'void-editor-widgets-tsx\index.js',
+            'void-tooltip\index.js',
+            'diff\index.js'
+          )
+          foreach ($rel in $entries) {
+            $p = Join-Path $reactOut $rel
+            if (-not (Test-Path -LiteralPath $p)) { throw "Missing Void React bundle after buildreact: $p" }
+            Write-Host "OK react out $rel"
+          }
+
       - name: Download built-in extensions
         run: npm run download-builtin-extensions
 
       - name: Build application (${{ matrix.gulp_target }})
         run: npm run gulp ${{ matrix.gulp_target }}
 
-      # ---- Windows: portable zip + best-effort Inno Setup installer(s) ----
+      # ---- Windows: portable zip + required Inno Setup installer(s) ----
       - name: Package Windows
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           $out = Join-Path $env:GITHUB_WORKSPACE '..\${{ matrix.build_dir }}'
           New-Item -ItemType Directory -Force -Path artifacts | Out-Null
           Compress-Archive -Path (Join-Path $out '*') -DestinationPath (Join-Path 'artifacts' 'Void-${{ matrix.name }}.zip') -Force
+          & "$env:GITHUB_WORKSPACE\scripts\verify-void-win32-package.ps1" -AppDir $out
 
-      - name: Build Windows installer (best-effort)
+      - name: Build Windows installer
         if: runner.os == 'Windows'
-        continue-on-error: true
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           npm run gulp vscode-win32-x64-inno-updater
           npm run gulp vscode-win32-x64-system-setup
           npm run gulp vscode-win32-x64-user-setup
-          Get-ChildItem -Recurse -Path '.build\win32-x64' -Filter '*.exe' | ForEach-Object {
-            Copy-Item $_.FullName (Join-Path 'artifacts' $_.Name)
-          }
+          $systemSetup = '.build\win32-x64\system-setup\VSCodeSetup.exe'
+          $userSetup = '.build\win32-x64\user-setup\VSCodeSetup.exe'
+          if (-not (Test-Path -LiteralPath $systemSetup)) { throw "Missing system installer: $systemSetup" }
+          if (-not (Test-Path -LiteralPath $userSetup)) { throw "Missing user installer: $userSetup" }
+          Copy-Item $systemSetup (Join-Path 'artifacts' 'VoidSetup-x64.exe') -Force
+          Copy-Item $userSetup (Join-Path 'artifacts' 'VoidUserSetup-x64.exe') -Force
+          & "$env:GITHUB_WORKSPACE\scripts\verify-void-win32-package.ps1" `
+            -AppDir (Join-Path $env:GITHUB_WORKSPACE '..\${{ matrix.build_dir }}') `
+            -DistDir (Join-Path $env:GITHUB_WORKSPACE 'artifacts') `
+            -RequireInstallers
 
       # ---- macOS: zip the .app bundle ----
       - name: Package macOS
