@@ -1,5 +1,11 @@
 # AGENTS.md
 
+## VeritIDE product planning
+
+Before rebranding to **veritIDE** or changing local-model / privacy behavior, read
+[`VERITIDE_PREREQUISITES.md`](./VERITIDE_PREREQUISITES.md) (approved decisions: fresh `.veritide`
+data, technical privacy guarantees, keep all Void features, opt-in network capability packs).
+
 ## Cursor Cloud specific instructions
 
 Void is a fork of VS Code — an Electron desktop IDE with an AI agent layer. Most Void-specific
