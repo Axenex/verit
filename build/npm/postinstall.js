@@ -139,6 +139,12 @@ for (let dir of dirs) {
 	}
 
 	if (/^(.build\/distro\/npm\/)?remote$/.test(dir)) {
+		// Desktop win32 packaging does not need the remote server node_modules.
+		// GitLab SaaS Windows runners also lack DelayImp.lib for @vscode/deviceid there.
+		if (process.env['VSCODE_SKIP_REMOTE_DEPENDENCIES']) {
+			log(dir, 'Skipping remote dependencies (VSCODE_SKIP_REMOTE_DEPENDENCIES)');
+			continue;
+		}
 		// node modules used by vscode server
 		opts = {
 			env: {

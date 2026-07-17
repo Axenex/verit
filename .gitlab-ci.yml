@@ -1,0 +1,231 @@
+# Void GitLab CI — Node 20.18.2
+#
+# Stages:
+#   validate — Linux: npm ci, buildreact, compile
+#   test     — Linux: Node unit tests against out/
+#   package  — Windows: portable Void win32-x64 zip (SaaS Windows runner)
+#
+# Intentionally omitted for now:
+#   - Full ESLint (fails on the unchanged baseline per project guidance)
+#   - Browser / smoke tests (heavy; need Electron + Playwright setup)
+#
+# Cache: npm download cache (.npm), keyed by package-lock.json
+# Windows: requires GitLab.com SaaS Windows runners (tag saas-windows-medium-amd64).
+# Push this branch to a GitLab project remote to run the pipeline.
+
+stages:
+  - validate
+  - test
+  - package
+
+variables:
+  NODE_OPTIONS: "--max-old-space-size=8192"
+  npm_config_cache: "$CI_PROJECT_DIR/.npm"
+  # Skip heavy optional downloads during Linux validate/test installs.
+  # Windows package job overrides ELECTRON_SKIP_BINARY_DOWNLOAD.
+  ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+
+default:
+  interruptible: true
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    - if: $CI_COMMIT_BRANCH
+    - if: $CI_COMMIT_TAG
+
+# Shared npm cache: local download cache only (not node_modules)
+.npm_cache: &npm_cache
+  key:
+    files:
+      - package-lock.json
+  paths:
+    - .npm/
+
+.linux_node_job:
+  image: node:20.18.2
+  before_script:
+    - apt-get update
+    - apt-get install -y --no-install-recommends
+        build-essential
+        g++
+        pkg-config
+        python3
+        libx11-dev
+        libxkbfile-dev
+        libsecret-1-dev
+        libkrb5-dev
+    - node -v
+    - npm -v
+    - test "$(node -v)" = "v20.18.2"
+
+.validate_npm_ci: &validate_npm_ci |
+  set -e
+  for i in 1 2 3 4 5; do
+    npm ci && break
+    if [ "$i" -eq 5 ]; then
+      echo "npm ci failed too many times" >&2
+      exit 1
+    fi
+    echo "npm ci failed ($i), retrying..."
+    sleep $((i * 5))
+  done
+
+validate:
+  extends: .linux_node_job
+  stage: validate
+  timeout: 2h
+  cache:
+    <<: *npm_cache
+    policy: pull-push
+  script:
+    - *validate_npm_ci
+    - npm run buildreact
+    - npm run compile
+  artifacts:
+    name: "compiled-out-$CI_COMMIT_SHORT_SHA"
+    paths:
+      - out/
+    expire_in: 1 hour
+    when: on_success
+
+test:
+  extends: .linux_node_job
+  stage: test
+  timeout: 30m
+  needs:
+    - job: validate
+      artifacts: true
+  cache:
+    <<: *npm_cache
+    policy: pull
+  script:
+    - *validate_npm_ci
+    - test -d out
+    - npm run test-node
+
+# ------------------------------------------------------------------ Windows portable app
+# Runs on GitLab.com hosted Windows runners (not Docker). Independent of Linux jobs.
+build:windows:
+  stage: package
+  tags:
+    - saas-windows-medium-amd64
+  needs: []
+  timeout: 3h
+  variables:
+    ELECTRON_SKIP_BINARY_DOWNLOAD: "0"
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+    npm_config_build_from_source: "true"
+  rules:
+    # Branch pushes (CI_COMMIT_BRANCH) and MR pipelines (source branch name).
+    - if: $CI_COMMIT_BRANCH =~ /^Axen\/gitlab-windows-build-/
+    - if: $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^Axen\/gitlab-windows-build-/
+    - if: $CI_COMMIT_TAG
+    - if: $CI_PIPELINE_SOURCE == "web"
+      when: manual
+      allow_failure: true
+  before_script:
+    # Avoid Chocolatey MSI downgrades (exit 1603 on SaaS images that ship Node 21).
+    # Install the .nvmrc pin from the official Windows zip onto PATH for this job.
+    - |
+      $ErrorActionPreference = 'Stop'
+      $ver = '20.18.2'
+      $zip = Join-Path $env:TEMP "node-v$ver-win-x64.zip"
+      $dest = 'C:\nodejs'
+      Invoke-WebRequest -Uri "https://nodejs.org/dist/v$ver/node-v$ver-win-x64.zip" -OutFile $zip
+      if (Test-Path $dest) { Remove-Item -Recurse -Force $dest }
+      if (Test-Path "C:\node-v$ver-win-x64") { Remove-Item -Recurse -Force "C:\node-v$ver-win-x64" }
+      Expand-Archive -Path $zip -DestinationPath 'C:\' -Force
+      Rename-Item -Path "C:\node-v$ver-win-x64" -NewName 'nodejs'
+      $env:Path = "$dest;" + [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [System.Environment]::GetEnvironmentVariable('Path','User')
+      [Environment]::SetEnvironmentVariable('Path', $env:Path, 'Process')
+      node -v
+      npm -v
+      if ((node -v) -ne "v$ver") { throw "Expected Node v$ver, got $(node -v)" }
+      $py = Get-Command python, python3, py -ErrorAction SilentlyContinue | Select-Object -First 1
+      if (-not $py) { throw 'Python not found on Windows runner PATH' }
+      & $py.Source --version
+    # SaaS Windows images often cannot modify VS BuildTools (setup.exe no-ops).
+    # Native modules set SpectreMitigation=Spectre in vcxproj (overrides .props).
+    # Directory.Build.targets is imported late and forces SpectreMitigation=false.
+    - |
+      $xml = @'
+      <Project>
+        <PropertyGroup>
+          <SpectreMitigation>false</SpectreMitigation>
+        </PropertyGroup>
+      </Project>
+      '@
+      $content = $xml.Trim()
+      Set-Content -Path "$env:CI_PROJECT_DIR\Directory.Build.props" -Value $content -Encoding UTF8
+      Set-Content -Path "$env:CI_PROJECT_DIR\Directory.Build.targets" -Value $content -Encoding UTF8
+      Write-Host 'Wrote Directory.Build.props/.targets to disable SpectreMitigation for CI'
+  script:
+    - |
+      $ErrorActionPreference = 'Stop'
+      # Put Node zip first, then import VS x64 toolset env (fixes LNK1104 DelayImp.lib).
+      $nodePath = 'C:\nodejs'
+      $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+      $installPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+      $vcvars = Join-Path $installPath 'VC\Auxiliary\Build\vcvars64.bat'
+      if (-not (Test-Path $vcvars)) { throw "vcvars64.bat not found: $vcvars" }
+      Write-Host "Loading VS env from $vcvars"
+      cmd /c "`"$vcvars`" && set" | ForEach-Object {
+        if ($_ -match '^(.*?)=(.*)$') {
+          [System.Environment]::SetEnvironmentVariable($matches[1], $matches[2], 'Process')
+        }
+      }
+      $env:Path = "$nodePath;$env:Path"
+      node -v
+      npm -v
+      where.exe link
+    # 1) Install Electron headers / local node-gyp (Windows preinstall)
+    # 2) npm install without lifecycle scripts (avoids MSB8040 during first gyp build)
+    # 3) Patch SpectreMitigation in binding.gyp files
+    # 4) Rebuild natives with --ignore-scripts so preinstall does not re-run
+    # 5) Run repo postinstall for nested package installs
+    # preinstall.js expects npm_execpath (set during npm lifecycle hooks).
+    - |
+      $env:npm_execpath = (Get-Command npm.cmd).Source
+      node build/npm/preinstall.js
+    - npm install --ignore-scripts
+    - |
+      $ErrorActionPreference = 'Stop'
+      Get-ChildItem -Path $env:CI_PROJECT_DIR -Recurse -Filter 'binding.gyp' -ErrorAction SilentlyContinue | ForEach-Object {
+        $text = Get-Content -Raw $_.FullName
+        $patched = $text -replace '"SpectreMitigation"\s*:\s*"Spectre"', '"SpectreMitigation": "false"'
+        if ($patched -ne $text) {
+          Set-Content -Path $_.FullName -Value $patched -NoNewline -Encoding utf8
+          Write-Host "Patched $($_.FullName)"
+        }
+      }
+    - npm rebuild --build-from-source --ignore-scripts
+    # Skip remote/ server deps: not needed for desktop vscode-win32-x64, and SaaS
+    # Windows SDK is missing DelayImp.lib (@vscode/deviceid LINK LNK1104).
+    - |
+      $env:VSCODE_SKIP_REMOTE_DEPENDENCIES = '1'
+      node build/npm/postinstall.js
+    - npm run buildreact
+    - npm run download-builtin-extensions
+    - npm run gulp vscode-win32-x64
+    - New-Item -ItemType Directory -Force -Path dist | Out-Null
+    - |
+      $out = Join-Path $env:CI_PROJECT_DIR '..\VSCode-win32-x64'
+      if (-not (Test-Path $out)) { throw "Expected build output missing: $out" }
+      Compress-Archive -Path (Join-Path $out '*') -DestinationPath 'dist\Void-win32-x64.zip' -Force
+      Get-Item 'dist\Void-win32-x64.zip' | Format-List FullName, Length
+    # Best-effort Inno Setup installers (non-fatal)
+    - npm run gulp vscode-win32-x64-inno-updater; if ($LASTEXITCODE -ne 0) { Write-Host "inno-updater failed (non-fatal)" }
+    - npm run gulp vscode-win32-x64-system-setup; if ($LASTEXITCODE -ne 0) { Write-Host "system-setup failed (non-fatal)" }
+    - npm run gulp vscode-win32-x64-user-setup; if ($LASTEXITCODE -ne 0) { Write-Host "user-setup failed (non-fatal)" }
+    - if (Test-Path '.build\win32-x64\system-setup\VSCodeSetup.exe') { Copy-Item '.build\win32-x64\system-setup\VSCodeSetup.exe' 'dist\VoidSetup-x64.exe' }
+    - if (Test-Path '.build\win32-x64\user-setup\VSCodeSetup.exe') { Copy-Item '.build\win32-x64\user-setup\VSCodeSetup.exe' 'dist\VoidUserSetup-x64.exe' }
+  artifacts:
+    name: "void-win32-x64-$CI_COMMIT_SHORT_SHA"
+    paths:
+      - dist/
+    expire_in: 1 week
+    when: on_success
