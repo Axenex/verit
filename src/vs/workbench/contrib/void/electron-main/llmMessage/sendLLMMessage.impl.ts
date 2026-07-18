@@ -100,8 +100,7 @@ const newOpenAICompatibleSDK = async ({ settingsOfProvider, providerName, includ
 			baseURL: 'https://openrouter.ai/api/v1',
 			apiKey: thisConfig.apiKey,
 			defaultHeaders: {
-				'HTTP-Referer': 'https://voideditor.com', // Optional, for including your app on openrouter.ai rankings.
-				'X-Title': 'Void', // Optional. Shows in rankings on openrouter.ai.
+				'X-Title': 'veritIDE',
 			},
 			...commonPayloadOpts,
 		})
@@ -118,8 +117,7 @@ const newOpenAICompatibleSDK = async ({ settingsOfProvider, providerName, includ
 			baseURL,
 			apiKey: thisConfig.apiKey,
 			defaultHeaders: {
-				'HTTP-Referer': 'https://voideditor.com',
-				'X-Title': 'Void',
+				'X-Title': 'veritIDE',
 			},
 			...commonPayloadOpts,
 		})
@@ -906,7 +904,7 @@ export const sendLLMMessageToProviderImplementation = {
 	openAICompatible: {
 		sendChat: (params) => _sendOpenAICompatibleChat(params), // using openai's SDK is not ideal (your implementation might not do tools, reasoning, FIM etc correctly), talk to us for a custom integration
 		sendFIM: (params) => _sendOpenAICompatibleFIM(params),
-		list: null,
+		list: (params) => _openaiCompatibleList(params),
 	},
 	openRouter: {
 		sendChat: (params) => _sendOpenAICompatibleChat(params),

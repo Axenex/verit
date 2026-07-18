@@ -16,12 +16,16 @@ import * as dom from '../../../../base/browser/dom.js';
 import { IUpdateService } from '../../../../platform/update/common/update.js';
 import { VoidCheckUpdateRespose } from '../common/voidUpdateServiceTypes.js';
 import { IAction } from '../../../../base/common/actions.js';
+import { IVoidSettingsService } from '../common/voidSettingsService.js';
+
+const VERITIDE_RELEASES_URL = 'https://github.com/Axenex/verit/releases';
+const VERITIDE_REPO_URL = 'https://github.com/Axenex/verit';
 
 
 
 
 const notifyUpdate = (res: VoidCheckUpdateRespose & { message: string }, notifService: INotificationService, updateService: IUpdateService): INotificationHandle => {
-	const message = res?.message || 'This is a very old version of Void, please download the latest version! [Void Editor](https://voideditor.com/download-beta)!'
+	const message = res?.message || `This is a very old version of veritIDE. Please download the latest release from [GitHub](${VERITIDE_RELEASES_URL}).`
 
 	let actions: INotificationActions | undefined
 
@@ -37,7 +41,7 @@ const notifyUpdate = (res: VoidCheckUpdateRespose & { message: string }, notifSe
 				class: undefined,
 				run: () => {
 					const { window } = dom.getActiveWindow()
-					window.open('https://voideditor.com/download-beta')
+					window.open(VERITIDE_RELEASES_URL)
 				}
 			})
 		}
@@ -85,12 +89,12 @@ const notifyUpdate = (res: VoidCheckUpdateRespose & { message: string }, notifSe
 		primary.push({
 			id: 'void.updater.site',
 			enabled: true,
-			label: `Void Site`,
+			label: `veritIDE on GitHub`,
 			tooltip: '',
 			class: undefined,
 			run: () => {
 				const { window } = dom.getActiveWindow()
-				window.open('https://voideditor.com/')
+				window.open(VERITIDE_REPO_URL)
 			}
 		})
 
@@ -121,13 +125,9 @@ const notifyUpdate = (res: VoidCheckUpdateRespose & { message: string }, notifSe
 	})
 
 	return notifController
-	// const d = notifController.onDidClose(() => {
-	// 	notifyYesUpdate(notifService, res)
-	// 	d.dispose()
-	// })
 }
 const notifyErrChecking = (notifService: INotificationService): INotificationHandle => {
-	const message = `Void Error: There was an error checking for updates. If this persists, please get in touch or reinstall Void [here](https://voideditor.com/download-beta)!`
+	const message = `veritIDE could not check for updates. If this persists, reinstall from [GitHub releases](${VERITIDE_RELEASES_URL}).`
 	const notifController = notifService.notify({
 		severity: Severity.Info,
 		message: message,
@@ -147,21 +147,21 @@ const performVoidCheck = async (
 
 	const metricsTag = explicit ? 'Manual' : 'Auto'
 
-	metricsService.capture(`Void Update ${metricsTag}: Checking...`, {})
+	metricsService.capture(`veritIDE Update ${metricsTag}: Checking...`, {})
 	const res = await voidUpdateService.check(explicit)
 	if (!res) {
 		const notifController = notifyErrChecking(notifService);
-		metricsService.capture(`Void Update ${metricsTag}: Error`, { res })
+		metricsService.capture(`veritIDE Update ${metricsTag}: Error`, { res })
 		return notifController
 	}
 	else {
 		if (res.message) {
 			const notifController = notifyUpdate(res, notifService, updateService)
-			metricsService.capture(`Void Update ${metricsTag}: Yes`, { res })
+			metricsService.capture(`veritIDE Update ${metricsTag}: Yes`, { res })
 			return notifController
 		}
 		else {
-			metricsService.capture(`Void Update ${metricsTag}: No`, { res })
+			metricsService.capture(`veritIDE Update ${metricsTag}: No`, { res })
 			return null
 		}
 	}
@@ -177,7 +177,7 @@ registerAction2(class extends Action2 {
 		super({
 			f1: true,
 			id: 'void.voidCheckUpdate',
-			title: localize2('voidCheckUpdate', 'Void: Check for Updates'),
+			title: localize2('voidCheckUpdate', 'veritIDE: Check for Updates'),
 		});
 	}
 	async run(accessor: ServicesAccessor): Promise<void> {
@@ -205,24 +205,41 @@ class VoidUpdateWorkbenchContribution extends Disposable implements IWorkbenchCo
 		@IMetricsService metricsService: IMetricsService,
 		@INotificationService notifService: INotificationService,
 		@IUpdateService updateService: IUpdateService,
+		@IVoidSettingsService voidSettingsService: IVoidSettingsService,
 	) {
 		super()
 
-		const autoCheck = () => {
-			performVoidCheck(false, notifService, voidUpdateService, metricsService, updateService)
-		}
+		let initId: number | null = null;
+		let intervalId: number | null = null;
 
-		// check once 5 seconds after mount
-		// check every 3 hours
-		const { window } = dom.getActiveWindow()
+		const clearSchedulers = () => {
+			const { window } = dom.getActiveWindow();
+			if (initId !== null) {
+				window.clearTimeout(initId);
+				initId = null;
+			}
+			if (intervalId !== null) {
+				window.clearInterval(intervalId);
+				intervalId = null;
+			}
+		};
 
-		const initId = window.setTimeout(() => autoCheck(), 5 * 1000)
-		this._register({ dispose: () => window.clearTimeout(initId) })
+		const scheduleAutoChecks = () => {
+			clearSchedulers();
+			if (!voidSettingsService.state.globalSettings.enableUpdateChecks) {
+				return;
+			}
+			const { window } = dom.getActiveWindow();
+			const autoCheck = () => {
+				performVoidCheck(false, notifService, voidUpdateService, metricsService, updateService);
+			};
+			initId = window.setTimeout(() => autoCheck(), 5 * 1000);
+			intervalId = window.setInterval(() => autoCheck(), 3 * 60 * 60 * 1000);
+		};
 
-
-		const intervalId = window.setInterval(() => autoCheck(), 3 * 60 * 60 * 1000) // every 3 hrs
-		this._register({ dispose: () => window.clearInterval(intervalId) })
-
+		this._register(voidSettingsService.onDidChangeState(() => scheduleAutoChecks()));
+		voidSettingsService.waitForInitState.then(() => scheduleAutoChecks()).catch(() => { /* non-fatal */ });
+		this._register({ dispose: () => clearSchedulers() });
 	}
 }
 registerWorkbenchContribution2(VoidUpdateWorkbenchContribution.ID, VoidUpdateWorkbenchContribution, WorkbenchPhase.BlockRestore);

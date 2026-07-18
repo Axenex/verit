@@ -16,7 +16,7 @@ type UnionOfKeys<T> = T extends T ? keyof T : never;
 export type ProviderName = keyof typeof defaultProviderSettings
 export const providerNames = Object.keys(defaultProviderSettings) as ProviderName[]
 
-export const localProviderNames = ['ollama', 'vLLM', 'lmStudio'] satisfies ProviderName[] // all local names
+export const localProviderNames = ['ollama', 'vLLM', 'lmStudio', 'openAICompatible'] satisfies ProviderName[] // all local names
 export const nonlocalProviderNames = providerNames.filter((name) => !(localProviderNames as string[]).includes(name)) // all non-local names
 
 type CustomSettingName = UnionOfKeys<typeof defaultProviderSettings[ProviderName]>
@@ -124,8 +124,8 @@ export const subTextMdOfProviderName = (providerName: ProviderName): string => {
 	if (providerName === 'groq') return 'Get your [API Key here](https://console.groq.com/keys).'
 	if (providerName === 'xAI') return 'Get your [API Key here](https://console.x.ai).'
 	if (providerName === 'mistral') return 'Get your [API Key here](https://console.mistral.ai/api-keys).'
-	if (providerName === 'openAICompatible') return `Use any provider that's OpenAI-compatible (use this for llama.cpp and more).`
-	if (providerName === 'googleVertex') return 'You must authenticate before using Vertex with Void. Read more about endpoints [here](https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/call-vertex-using-openai-library), and regions [here](https://cloud.google.com/vertex-ai/docs/general/locations#available-regions).'
+	if (providerName === 'openAICompatible') return `Use any OpenAI-compatible local or remote endpoint (llama.cpp, vLLM, LM Studio, etc.). API key is optional for localhost/LAN endpoints.`
+	if (providerName === 'googleVertex') return 'You must authenticate before using Vertex with veritIDE. Read more about endpoints [here](https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/call-vertex-using-openai-library), and regions [here](https://cloud.google.com/vertex-ai/docs/general/locations#available-regions).'
 	if (providerName === 'microsoftAzure') return 'Read more about endpoints [here](https://learn.microsoft.com/en-us/rest/api/aifoundry/model-inference/get-chat-completions/get-chat-completions?view=rest-aifoundry-model-inference-2024-05-01-preview&tabs=HTTP), and get your API key [here](https://learn.microsoft.com/en-us/azure/search/search-security-api-keys?tabs=rest-use%2Cportal-find%2Cportal-query#find-existing-keys).'
 	if (providerName === 'awsBedrock') return 'Connect via a LiteLLM proxy or the AWS [Bedrock-Access-Gateway](https://github.com/aws-samples/bedrock-access-gateway). LiteLLM Bedrock setup docs are [here](https://docs.litellm.ai/docs/providers/bedrock).'
 	if (providerName === 'ollama') return 'Read more about custom [Endpoints here](https://github.com/ollama/ollama/blob/main/docs/faq.md#how-can-i-expose-ollama-on-my-network).'
@@ -182,7 +182,7 @@ export const displayInfoOfSettingName = (providerName: ProviderName, settingName
 			placeholder: providerName === 'ollama' ? defaultProviderSettings.ollama.endpoint
 				: providerName === 'vLLM' ? defaultProviderSettings.vLLM.endpoint
 					: providerName === 'godmode' ? defaultProviderSettings.godmode.endpoint
-					: providerName === 'openAICompatible' ? 'https://my-website.com/v1'
+					: providerName === 'openAICompatible' ? 'http://127.0.0.1:8080/v1'
 						: providerName === 'lmStudio' ? defaultProviderSettings.lmStudio.endpoint
 							: providerName === 'liteLLM' ? 'http://localhost:4000'
 								: providerName === 'awsBedrock' ? 'http://localhost:4000/v1'
@@ -402,6 +402,49 @@ export const displayInfoOfFeatureName = (featureName: FeatureName) => {
 export const refreshableProviderNames = localProviderNames
 export type RefreshableProviderName = typeof refreshableProviderNames[number]
 
+/** True when endpoint points at localhost or a private LAN address. */
+export const isLocalEndpoint = (endpoint: string): boolean => {
+	if (!endpoint?.trim()) {
+		return false;
+	}
+	try {
+		const url = new URL(endpoint.includes('://') ? endpoint : `http://${endpoint}`);
+		const host = url.hostname.toLowerCase();
+		if (host === 'localhost' || host === '127.0.0.1' || host === '::1' || host.endsWith('.local')) {
+			return true;
+		}
+		if (/^10\.\d+\.\d+\.\d+$/.test(host)) {
+			return true;
+		}
+		if (/^192\.168\.\d+\.\d+$/.test(host)) {
+			return true;
+		}
+		if (/^172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$/.test(host)) {
+			return true;
+		}
+		return false;
+	} catch {
+		return false;
+	}
+};
+
+/** Whether required provider fields are filled (local OpenAI-compatible may omit apiKey). */
+export const providerSettingsAreFilled = (providerName: ProviderName, settings: SettingsOfProvider[ProviderName]): boolean => {
+	for (const key of Object.keys(defaultProviderSettings[providerName])) {
+		const val = (settings as Record<string, unknown>)[key];
+		if (providerName === 'openAICompatible' && key === 'apiKey') {
+			const endpoint = String((settings as SettingsAtProvider<'openAICompatible'>).endpoint ?? '');
+			if (isLocalEndpoint(endpoint)) {
+				continue;
+			}
+		}
+		if (!val) {
+			return false;
+		}
+	}
+	return true;
+};
+
 // models that come with download buttons
 export const hasDownloadButtonsOnModelsProviderNames = ['ollama'] as const satisfies ProviderName[]
 
@@ -465,6 +508,14 @@ export type GlobalSettings = {
 	isOnboardingComplete: boolean;
 	disableSystemMessage: boolean;
 	autoAcceptLLMChanges: boolean;
+	/** Opt-in: anonymous usage metrics (default off). */
+	enableUsageMetrics: boolean;
+	/** Opt-in: automatic update checks (default off). */
+	enableUpdateChecks: boolean;
+	/** Opt-in: fetch capability packs from the network (default off). */
+	enableCapabilityPacks: boolean;
+	/** URL for remote capability pack when enableCapabilityPacks is true. */
+	capabilityPackUrl: string;
 }
 
 export const defaultGlobalSettings: GlobalSettings = {
@@ -481,6 +532,10 @@ export const defaultGlobalSettings: GlobalSettings = {
 	isOnboardingComplete: false,
 	disableSystemMessage: false,
 	autoAcceptLLMChanges: false,
+	enableUsageMetrics: false,
+	enableUpdateChecks: false,
+	enableCapabilityPacks: false,
+	capabilityPackUrl: 'https://raw.githubusercontent.com/Axenex/verit/main/resources/capabilities/veritide-model-catalog.json',
 }
 
 export type GlobalSettingName = keyof GlobalSettings

@@ -87,3 +87,6 @@ import '../common/voidUpdateService.js'
 
 // model service
 import '../common/voidModelService.js'
+
+// capability catalog (ABI v1)
+import '../common/capabilityCatalogService.js'

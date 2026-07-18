@@ -3,6 +3,7 @@
  *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
  *--------------------------------------------------------------------------------------*/
 
+import { lookupCatalogCapabilities } from './capabilityCatalog.js';
 import { FeatureName, ModelSelectionOptions, OverridesOfModel, ProviderName } from './voidSettingsTypes.js';
 
 
@@ -33,7 +34,7 @@ export const defaultProviderSettings = {
 		endpoint: 'https://godmod3.ai/v1',
 	},
 	openAICompatible: {
-		endpoint: '',
+		endpoint: 'http://127.0.0.1:8080/v1',
 		apiKey: '',
 		headersJSON: '{}', // default to {}
 	},
@@ -254,12 +255,13 @@ type VoidStaticProviderInfo = { // doesn't change (not stateful)
 
 
 const defaultModelOptions = {
-	contextWindow: 4_096,
-	reservedOutputTokenSpace: 4_096,
+	contextWindow: 32_768,
+	reservedOutputTokenSpace: 8_192,
 	cost: { input: 0, output: 0 },
 	downloadable: false,
-	supportsSystemMessage: false,
-	supportsFIM: false,
+	supportsSystemMessage: 'system-role',
+	supportsFIM: true,
+	specialToolFormat: 'openai-style',
 	reasoningCapabilities: false,
 } as const satisfies VoidStaticModelInfo
 
@@ -1581,6 +1583,11 @@ export const getModelCapabilities = (
 	const result = modelOptionsFallback(modelName)
 	if (result) {
 		return { ...result, ...overrides, modelName: result.modelName, isUnrecognizedModel: false };
+	}
+
+	const catalogEntry = lookupCatalogCapabilities(providerName, modelName)
+	if (catalogEntry) {
+		return { modelName, ...defaultModelOptions, ...catalogEntry, ...overrides, recognizedModelName: modelName, isUnrecognizedModel: false };
 	}
 
 	return { modelName, ...defaultModelOptions, ...overrides, isUnrecognizedModel: true };
