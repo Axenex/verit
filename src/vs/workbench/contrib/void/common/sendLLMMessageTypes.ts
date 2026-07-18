@@ -210,6 +210,28 @@ export type MainModelListParams<modelResponse> = Omit<ModelListParams<modelRespo
 export type EventModelListOnSuccessParams<modelResponse> = Parameters<ModelListParams<modelResponse>['onSuccess']>[0] & { requestId: string }
 export type EventModelListOnErrorParams<modelResponse> = Parameters<ModelListParams<modelResponse>['onError']>[0] & { requestId: string }
 
+// ollama pull
+export type OllamaPullParams = {
+	modelName: string;
+	settingsOfProvider: SettingsOfProvider;
+	onProgress: (param: { status: string }) => void;
+	onSuccess: () => void;
+	onError: (param: { error: string }) => void;
+}
+
+export type ServiceOllamaPullParams = {
+	modelName: string;
+	onProgress: (param: { status: string }) => void;
+	onSuccess: () => void;
+	onError: (param: { error: string }) => void;
+}
+
+export type MainOllamaPullParams = Pick<OllamaPullParams, 'modelName' | 'settingsOfProvider'> & { requestId: string }
+
+export type EventOllamaPullOnProgressParams = { requestId: string; status: string }
+export type EventOllamaPullOnSuccessParams = { requestId: string }
+export type EventOllamaPullOnErrorParams = { requestId: string; error: string }
+
 
 
 

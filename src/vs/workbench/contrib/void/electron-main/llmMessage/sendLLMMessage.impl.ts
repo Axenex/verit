@@ -14,7 +14,7 @@ import { Tool as GeminiTool, FunctionDeclaration, GoogleGenAI, ThinkingConfig, S
 import { GoogleAuth } from 'google-auth-library'
 /* eslint-enable */
 
-import { AnthropicLLMChatMessage, GeminiLLMChatMessage, LLMChatMessage, LLMFIMMessage, ModelListParams, OllamaModelResponse, OnError, OnFinalMessage, OnText, RawToolCallObj, RawToolParamsObj } from '../../common/sendLLMMessageTypes.js';
+import { AnthropicLLMChatMessage, GeminiLLMChatMessage, LLMChatMessage, LLMFIMMessage, ModelListParams, OllamaModelResponse, OllamaPullParams, OnError, OnFinalMessage, OnText, RawToolCallObj, RawToolParamsObj } from '../../common/sendLLMMessageTypes.js';
 import { ChatMode, displayInfoOfProviderName, ModelSelectionOptions, OverridesOfModel, ProviderName, SettingsOfProvider } from '../../common/voidSettingsTypes.js';
 import { getSendableReasoningInfo, getModelCapabilities, getProviderCapabilities, defaultProviderSettings, getReservedOutputTokenSpace } from '../../common/modelCapabilities.js';
 import { extractReasoningWrapper, extractXMLToolsWrapper } from './extractGrammar.js';
@@ -184,7 +184,7 @@ const newOpenAICompatibleSDK = async ({ settingsOfProvider, providerName, includ
 		return new OpenAI({ baseURL: 'https://api.mistral.ai/v1', apiKey: thisConfig.apiKey, ...commonPayloadOpts })
 	}
 
-	else throw new Error(`Void providerName was invalid: ${providerName}.`)
+	else throw new Error(`veritIDE providerName was invalid: ${providerName}.`)
 }
 
 
@@ -388,7 +388,7 @@ const _sendOpenAICompatibleChat = async ({ messages, onText, onFinalMessage, onE
 			}
 			// on final
 			if (!fullTextSoFar && !fullReasoningSoFar && !toolName) {
-				onError({ message: 'Void: Response from model was empty.', fullError: null })
+				onError({ message: 'veritIDE: Response from model was empty.', fullError: null })
 			}
 			else {
 				const toolCall = rawToolCallObjOfParamsStr(toolName, toolParamsStr, toolId)
@@ -636,7 +636,7 @@ const sendMistralFIM = ({ messages, onFinalMessage, onError, settingsOfProvider,
 // ------------ OLLAMA ------------
 const newOllamaSDK = ({ endpoint }: { endpoint: string }) => {
 	// if endpoint is empty, normally ollama will send to 11434, but we want it to fail - the user should type it in
-	if (!endpoint) throw new Error(`Ollama Endpoint was empty (please enter ${defaultProviderSettings.ollama.endpoint} in Void if you want the default url).`)
+	if (!endpoint) throw new Error(`Ollama Endpoint was empty (please enter ${defaultProviderSettings.ollama.endpoint} in veritIDE Settings).`)
 	const ollama = new Ollama({ host: endpoint })
 	return ollama
 }
@@ -694,6 +694,22 @@ const sendOllamaFIM = ({ messages, onFinalMessage, onError, settingsOfProvider, 
 		.catch((error) => {
 			onError({ message: error + '', fullError: error })
 		})
+}
+
+export const ollamaPull = async ({ modelName, onProgress, onSuccess, onError, settingsOfProvider }: OllamaPullParams) => {
+	try {
+		const thisConfig = settingsOfProvider.ollama
+		const ollama = newOllamaSDK({ endpoint: thisConfig.endpoint })
+		const stream = await ollama.pull({ model: modelName, stream: true })
+		for await (const chunk of stream) {
+			if (chunk.status) {
+				onProgress({ status: chunk.status })
+			}
+		}
+		onSuccess()
+	} catch (error) {
+		onError({ error: error + '' })
+	}
 }
 
 // ---------------- GEMINI NATIVE IMPLEMENTATION ----------------
@@ -833,7 +849,7 @@ const sendGeminiChat = async ({
 
 			// on final
 			if (!fullTextSoFar && !fullReasoningSoFar && !toolName) {
-				onError({ message: 'Void: Response from model was empty.', fullError: null })
+				onError({ message: 'veritIDE: Response from model was empty.', fullError: null })
 			} else {
 				if (!toolId) toolId = generateUuid() // ids are empty, but other providers might expect an id
 				const toolCall = rawToolCallObjOfParamsStr(toolName, toolParamsStr, toolId)

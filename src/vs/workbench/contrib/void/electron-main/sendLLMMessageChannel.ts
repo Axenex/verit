@@ -8,10 +8,10 @@
 
 import { IServerChannel } from '../../../../base/parts/ipc/common/ipc.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
-import { EventLLMMessageOnTextParams, EventLLMMessageOnErrorParams, EventLLMMessageOnFinalMessageParams, MainSendLLMMessageParams, AbortRef, SendLLMMessageParams, MainLLMMessageAbortParams, ModelListParams, EventModelListOnSuccessParams, EventModelListOnErrorParams, OllamaModelResponse, OpenaiCompatibleModelResponse, MainModelListParams, } from '../common/sendLLMMessageTypes.js';
+import { EventLLMMessageOnTextParams, EventLLMMessageOnErrorParams, EventLLMMessageOnFinalMessageParams, MainSendLLMMessageParams, AbortRef, SendLLMMessageParams, MainLLMMessageAbortParams, ModelListParams, EventModelListOnSuccessParams, EventModelListOnErrorParams, OllamaModelResponse, OpenaiCompatibleModelResponse, MainModelListParams, MainOllamaPullParams, EventOllamaPullOnProgressParams, EventOllamaPullOnSuccessParams, EventOllamaPullOnErrorParams, OllamaPullParams, } from '../common/sendLLMMessageTypes.js';
 import { sendLLMMessage } from './llmMessage/sendLLMMessage.js'
 import { IMetricsService } from '../common/metricsService.js';
-import { sendLLMMessageToProviderImplementation } from './llmMessage/sendLLMMessage.impl.js';
+import { sendLLMMessageToProviderImplementation, ollamaPull } from './llmMessage/sendLLMMessage.impl.js';
 
 // NODE IMPLEMENTATION - calls actual sendLLMMessage() and returns listeners to it
 
@@ -38,11 +38,11 @@ export class LLMMessageChannel implements IServerChannel {
 			success: new Emitter<EventModelListOnSuccessParams<OpenaiCompatibleModelResponse>>(),
 			error: new Emitter<EventModelListOnErrorParams<OpenaiCompatibleModelResponse>>(),
 		},
-	} satisfies {
-		[providerName in 'ollama' | 'openaiCompat']: {
-			success: Emitter<EventModelListOnSuccessParams<any>>,
-			error: Emitter<EventModelListOnErrorParams<any>>,
-		}
+		ollamaPull: {
+			progress: new Emitter<EventOllamaPullOnProgressParams>(),
+			success: new Emitter<EventOllamaPullOnSuccessParams>(),
+			error: new Emitter<EventOllamaPullOnErrorParams>(),
+		},
 	}
 
 	// stupidly, channels can't take in @IService
@@ -61,6 +61,9 @@ export class LLMMessageChannel implements IServerChannel {
 		else if (event === 'onError_list_ollama') return this.listEmitters.ollama.error.event;
 		else if (event === 'onSuccess_list_openAICompatible') return this.listEmitters.openaiCompat.success.event;
 		else if (event === 'onError_list_openAICompatible') return this.listEmitters.openaiCompat.error.event;
+		else if (event === 'onProgress_ollamaPull') return this.listEmitters.ollamaPull.progress.event;
+		else if (event === 'onSuccess_ollamaPull') return this.listEmitters.ollamaPull.success.event;
+		else if (event === 'onError_ollamaPull') return this.listEmitters.ollamaPull.error.event;
 
 		else throw new Error(`Event not found: ${event}`);
 	}
@@ -80,8 +83,11 @@ export class LLMMessageChannel implements IServerChannel {
 			else if (command === 'openAICompatibleList') {
 				this._callOpenAICompatibleList(params)
 			}
+			else if (command === 'ollamaPull') {
+				this._callOllamaPull(params)
+			}
 			else {
-				throw new Error(`Void sendLLM: command "${command}" not recognized.`)
+				throw new Error(`veritIDE sendLLM: command "${command}" not recognized.`)
 			}
 		}
 		catch (e) {
@@ -149,8 +155,16 @@ export class LLMMessageChannel implements IServerChannel {
 		sendLLMMessageToProviderImplementation[providerName].list(mainThreadParams)
 	}
 
-
-
-
+	_callOllamaPull = (params: MainOllamaPullParams) => {
+		const { requestId } = params
+		const emitters = this.listEmitters.ollamaPull
+		const mainThreadParams: OllamaPullParams = {
+			...params,
+			onProgress: (p) => { emitters.progress.fire({ requestId, ...p }); },
+			onSuccess: () => { emitters.success.fire({ requestId }); },
+			onError: (p) => { emitters.error.fire({ requestId, ...p }); },
+		}
+		ollamaPull(mainThreadParams)
+	}
 
 }

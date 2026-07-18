@@ -3,7 +3,7 @@
  *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
  *--------------------------------------------------------------------------------------*/
 
-import { EventLLMMessageOnTextParams, EventLLMMessageOnErrorParams, EventLLMMessageOnFinalMessageParams, ServiceSendLLMMessageParams, MainSendLLMMessageParams, MainLLMMessageAbortParams, ServiceModelListParams, EventModelListOnSuccessParams, EventModelListOnErrorParams, MainModelListParams, OllamaModelResponse, OpenaiCompatibleModelResponse, } from './sendLLMMessageTypes.js';
+import { EventLLMMessageOnTextParams, EventLLMMessageOnErrorParams, EventLLMMessageOnFinalMessageParams, ServiceSendLLMMessageParams, MainSendLLMMessageParams, MainLLMMessageAbortParams, ServiceModelListParams, EventModelListOnSuccessParams, EventModelListOnErrorParams, MainModelListParams, OllamaModelResponse, OpenaiCompatibleModelResponse, ServiceOllamaPullParams, MainOllamaPullParams, EventOllamaPullOnProgressParams, EventOllamaPullOnSuccessParams, EventOllamaPullOnErrorParams, } from './sendLLMMessageTypes.js';
 
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 import { registerSingleton, InstantiationType } from '../../../../platform/instantiation/common/extensions.js';
@@ -24,6 +24,7 @@ export interface ILLMMessageService {
 	abort: (requestId: string) => void;
 	ollamaList: (params: ServiceModelListParams<OllamaModelResponse>) => void;
 	openAICompatibleList: (params: ServiceModelListParams<OpenaiCompatibleModelResponse>) => void;
+	ollamaPull: (params: ServiceOllamaPullParams) => void;
 }
 
 
@@ -56,6 +57,12 @@ export class LLMMessageService extends Disposable implements ILLMMessageService 
 			success: { [eventId: string]: ((params: EventModelListOnSuccessParams<any>) => void) },
 			error: { [eventId: string]: ((params: EventModelListOnErrorParams<any>) => void) },
 		}
+	}
+
+	private readonly ollamaPullHooks = {
+		progress: {} as { [eventId: string]: ((params: EventOllamaPullOnProgressParams) => void) },
+		success: {} as { [eventId: string]: ((params: EventOllamaPullOnSuccessParams) => void) },
+		error: {} as { [eventId: string]: ((params: EventOllamaPullOnErrorParams) => void) },
 	}
 
 	constructor(
@@ -96,6 +103,17 @@ export class LLMMessageService extends Disposable implements ILLMMessageService 
 		}))
 		this._register((this.channel.listen('onError_list_openAICompatible') satisfies Event<EventModelListOnErrorParams<OpenaiCompatibleModelResponse>>)(e => {
 			this.listHooks.openAICompat.error[e.requestId]?.(e)
+		}))
+		this._register((this.channel.listen('onProgress_ollamaPull') satisfies Event<EventOllamaPullOnProgressParams>)(e => {
+			this.ollamaPullHooks.progress[e.requestId]?.(e)
+		}))
+		this._register((this.channel.listen('onSuccess_ollamaPull') satisfies Event<EventOllamaPullOnSuccessParams>)(e => {
+			this.ollamaPullHooks.success[e.requestId]?.(e)
+			this._clearOllamaPullHooks(e.requestId)
+		}))
+		this._register((this.channel.listen('onError_ollamaPull') satisfies Event<EventOllamaPullOnErrorParams>)(e => {
+			this.ollamaPullHooks.error[e.requestId]?.(e)
+			this._clearOllamaPullHooks(e.requestId)
 		}))
 
 	}
@@ -182,6 +200,20 @@ export class LLMMessageService extends Disposable implements ILLMMessageService 
 		} satisfies MainModelListParams<OpenaiCompatibleModelResponse>)
 	}
 
+	ollamaPull = (params: ServiceOllamaPullParams) => {
+		const { onProgress, onSuccess, onError, modelName } = params
+		const { settingsOfProvider } = this.voidSettingsService.state
+		const requestId_ = generateUuid()
+		this.ollamaPullHooks.progress[requestId_] = onProgress
+		this.ollamaPullHooks.success[requestId_] = onSuccess
+		this.ollamaPullHooks.error[requestId_] = onError
+		this.channel.call('ollamaPull', {
+			modelName,
+			settingsOfProvider,
+			requestId: requestId_,
+		} satisfies MainOllamaPullParams)
+	}
+
 	private _clearChannelHooks(requestId: string) {
 		delete this.llmMessageHooks.onText[requestId]
 		delete this.llmMessageHooks.onFinalMessage[requestId]
@@ -192,6 +224,12 @@ export class LLMMessageService extends Disposable implements ILLMMessageService 
 
 		delete this.listHooks.openAICompat.success[requestId]
 		delete this.listHooks.openAICompat.error[requestId]
+	}
+
+	private _clearOllamaPullHooks(requestId: string) {
+		delete this.ollamaPullHooks.progress[requestId]
+		delete this.ollamaPullHooks.success[requestId]
+		delete this.ollamaPullHooks.error[requestId]
 	}
 }
 

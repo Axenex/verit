@@ -233,6 +233,30 @@ export type ModelOverrides = Pick<
 	(typeof modelOverrideKeys)[number]
 >
 
+export type CapabilityPresetName = 'chat' | 'coding' | 'agent'
+
+export const capabilityPresets: Record<CapabilityPresetName, Partial<ModelOverrides>> = {
+	chat: {
+		contextWindow: 32_768,
+		supportsFIM: false,
+		specialToolFormat: 'openai-style',
+		supportsSystemMessage: 'system-role',
+	},
+	coding: {
+		contextWindow: 32_768,
+		supportsFIM: true,
+		specialToolFormat: 'openai-style',
+		supportsSystemMessage: 'system-role',
+	},
+	agent: {
+		contextWindow: 32_768,
+		supportsFIM: false,
+		specialToolFormat: 'openai-style',
+		supportsSystemMessage: 'system-role',
+		reservedOutputTokenSpace: 8_192,
+	},
+}
+
 
 
 

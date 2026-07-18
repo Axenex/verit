@@ -158,7 +158,7 @@ src/vs/workbench/contrib/void/electron-main/llmMessage/sendLLMMessage.impl.ts
 - [ ] New model name works via settings + bundled/heuristic defaults without TypeScript edit.
 - [ ] User can drop a capability JSON file and see effect after reload.
 - [ ] Optional: fetch capability pack from network when toggle is on.
-- [ ] One doc page: “Add a model veritIDE doesn’t know yet.”
+- [ ] One doc page: “Add a model veritIDE doesn’t know yet.” → see [`docs/add-model.md`](docs/add-model.md)
 
 ---
 
