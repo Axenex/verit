@@ -7,7 +7,7 @@ import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { ProviderName, SettingName, displayInfoOfSettingName, providerNames, VoidStatefulModelInfo, customSettingNamesOfProvider, RefreshableProviderName, refreshableProviderNames, displayInfoOfProviderName, nonlocalProviderNames, localProviderNames, GlobalSettingName, featureNames, displayInfoOfFeatureName, isProviderNameDisabled, FeatureName, hasDownloadButtonsOnModelsProviderNames, subTextMdOfProviderName } from '../../../../common/voidSettingsTypes.js'
 import ErrorBoundary from '../sidebar-tsx/ErrorBoundary.js'
 import { VoidButtonBgDarken, VoidCustomDropdownBox, VoidInputBox2, VoidSimpleInputBox, VoidSwitch } from '../util/inputs.js'
-import { useAccessor, useIsDark, useIsOptedOut, useRefreshModelListener, useRefreshModelState, useSettingsState } from '../util/services.js'
+import { useAccessor, useIsDark, useRefreshModelListener, useRefreshModelState, useSettingsState } from '../util/services.js'
 import { X, RefreshCw, Loader2, Check, Asterisk, Plus } from 'lucide-react'
 import { URI } from '../../../../../../../base/common/uri.js'
 import { ModelDropdown } from './ModelDropdown.js'
@@ -21,8 +21,6 @@ import { getModelCapabilities, modelOverrideKeys, ModelOverrides, ollamaRecommen
 import { TransferEditorType, TransferFilesInfo } from '../../../extensionTransferTypes.js';
 import { MCPServer } from '../../../../common/mcpServiceTypes.js';
 import { useMCPServiceState } from '../util/services.js';
-import { OPT_OUT_KEY } from '../../../../common/storageKeys.js';
-import { StorageScope, StorageTarget } from '../../../../../../../platform/storage/common/storage.js';
 
 type Tab =
 	| 'models'
@@ -31,6 +29,7 @@ type Tab =
 	| 'featureOptions'
 	| 'mcp'
 	| 'general'
+	| 'privacy'
 	| 'all';
 
 
@@ -89,11 +88,58 @@ const RefreshModelButton = ({ providerName }: { providerName: RefreshableProvide
 			</button>
 		}
 
-		text={justFinished === 'finished' ? `${providerTitle} Models are up-to-date!`
-			: justFinished === 'error' ? `${providerTitle} not found!`
-				: `Manually refresh ${providerTitle} models.`}
+		text={justFinished === 'finished' ? `${providerTitle} models are up-to-date!`
+			: justFinished === 'error' ? `${providerTitle} not reachable — check endpoint and retry.`
+				: `Check ${providerTitle} connection and refresh models.`}
 	/>
 }
+
+const LocalProviderHealthStatus = () => {
+	const refreshModelState = useRefreshModelState()
+	const accessor = useAccessor()
+	const refreshModelService = accessor.get('IRefreshModelService')
+
+	return <div className='flex flex-col gap-2 my-4 p-4 rounded-md bg-void-bg-2/50 border border-void-border-4'>
+		<h4 className='text-sm font-medium text-void-fg-1'>Local provider health</h4>
+		{localProviderNames.map(providerName => {
+			const { state } = refreshModelState[providerName]
+			const { title } = displayInfoOfProviderName(providerName)
+			const statusLabel = state === 'finished' ? 'Reachable'
+				: state === 'error' ? 'Not reachable'
+					: state === 'refreshing' ? 'Checking…'
+						: 'Not checked yet'
+			const statusColor = state === 'finished' ? 'text-green-500'
+				: state === 'error' ? 'text-red-500'
+					: state === 'refreshing' ? 'text-void-fg-3'
+						: 'text-void-fg-3'
+
+			return <div key={providerName} className='flex items-center justify-between gap-4 text-sm'>
+				<span className='text-void-fg-2'>{title}</span>
+				<div className='flex items-center gap-2'>
+					<span className={statusColor}>{statusLabel}</span>
+					<button
+						className='text-xs text-void-fg-3 hover:text-void-fg-1 underline'
+						onClick={() => refreshModelService.startRefreshingModels(providerName, { enableProviderOnSuccess: false, doNotFire: false })}
+					>
+						Retry
+					</button>
+				</div>
+			</div>
+		})}
+	</div>
+}
+
+const AddLocalModelGuide = () => (
+	<div className='bg-void-bg-2/50 rounded-lg p-4 border border-void-border-4 mb-6'>
+		<h4 className='text-base mb-2'>Add a local model</h4>
+		<ol className='text-sm text-void-fg-3 list-decimal list-inside space-y-1'>
+			<li>Choose a local provider below (Ollama, vLLM, LM Studio, or OpenAI-compatible).</li>
+			<li>Enter your endpoint URL — defaults work for most setups; API keys are optional on localhost/LAN.</li>
+			<li>Refresh or wait for auto-detect — models appear in the Models tab.</li>
+			<li>Enable a model for Chat to start coding with your local LLM.</li>
+		</ol>
+	</div>
+)
 
 const RefreshableModels = () => {
 	const settingsState = useSettingsState()
@@ -321,10 +367,10 @@ const SimpleModelSettingsDialog = ({
 
 				{/* Display model recognition status */}
 				<div className="text-sm text-void-fg-3 mb-4">
-					{type === 'default' ? `${modelName} comes packaged with Void, so you shouldn't need to change these settings.`
+					{type === 'default' ? `${modelName} comes packaged with veritIDE, so you shouldn't need to change these settings.`
 						: isUnrecognizedModel
-							? `Model not recognized by Void.`
-							: `Void recognizes ${modelName} ("${recognizedModelName}").`}
+							? `Model not recognized by veritIDE — using sensible defaults. Tune capabilities below if needed.`
+							: `veritIDE recognizes ${modelName} ("${recognizedModelName}").`}
 				</div>
 
 
@@ -841,7 +887,7 @@ export const OllamaSetupInstructions = ({ sayWeAutoDetect }: { sayWeAutoDetect?:
 				</div>
 			))}
 		</div>
-		{sayWeAutoDetect && <div className=' pl-6 mt-1'><ChatMarkdownRender string={`Void automatically detects locally running models and enables them — no restart needed.`} chatMessageLocation={undefined} /></div>}
+		{sayWeAutoDetect && <div className=' pl-6 mt-1'><ChatMarkdownRender string={`veritIDE automatically detects locally running models and enables them — no restart needed.`} chatMessageLocation={undefined} /></div>}
 	</div>
 }
 
@@ -1050,6 +1096,7 @@ export const Settings = () => {
 		{ tab: 'localProviders', label: 'Local Providers' },
 		{ tab: 'providers', label: 'Main Providers' },
 		{ tab: 'featureOptions', label: 'Feature Options' },
+		{ tab: 'privacy', label: 'Privacy' },
 		{ tab: 'general', label: 'General' },
 		{ tab: 'mcp', label: 'MCP' },
 		{ tab: 'all', label: 'All Settings' },
@@ -1064,9 +1111,7 @@ export const Settings = () => {
 	const chatThreadsService = accessor.get('IChatThreadService')
 	const notificationService = accessor.get('INotificationService')
 	const mcpService = accessor.get('IMCPService')
-	const storageService = accessor.get('IStorageService')
 	const metricsService = accessor.get('IMetricsService')
-	const isOptedOut = useIsOptedOut()
 
 	const onDownload = (t: 'Chats' | 'Settings') => {
 		let dataStr: string
@@ -1074,12 +1119,12 @@ export const Settings = () => {
 		if (t === 'Chats') {
 			// Export chat threads
 			dataStr = JSON.stringify(chatThreadsService.state, null, 2)
-			downloadName = 'void-chats.json'
+			downloadName = 'veritide-chats.json'
 		}
 		else if (t === 'Settings') {
 			// Export user settings
 			dataStr = JSON.stringify(voidSettingsService.state, null, 2)
-			downloadName = 'void-settings.json'
+			downloadName = 'veritide-settings.json'
 		}
 		else {
 			dataStr = ''
@@ -1171,7 +1216,7 @@ export const Settings = () => {
 
 					<div className='max-w-3xl'>
 
-						<h1 className='text-2xl w-full'>{`Void's Settings`}</h1>
+						<h1 className='text-2xl w-full'>{`veritIDE Settings`}</h1>
 
 						<div className='w-full h-[1px] my-2' />
 
@@ -1199,7 +1244,10 @@ export const Settings = () => {
 							<div className={shouldShowTab('localProviders') ? `` : 'hidden'}>
 								<ErrorBoundary>
 									<h2 className={`text-3xl mb-2`}>Local Providers</h2>
-									<h3 className={`text-void-fg-3 mb-2`}>{`Void can access any model that you host locally. We automatically detect your local models by default.`}</h3>
+									<h3 className={`text-void-fg-3 mb-2`}>{`veritIDE can access any model you host locally. We auto-detect local models by default.`}</h3>
+
+									<AddLocalModelGuide />
+									<LocalProviderHealthStatus />
 
 									<div className='opacity-80 mb-4'>
 										<OllamaSetupInstructions sayWeAutoDetect={true} />
@@ -1213,7 +1261,7 @@ export const Settings = () => {
 							<div className={shouldShowTab('providers') ? `` : 'hidden'}>
 								<ErrorBoundary>
 									<h2 className={`text-3xl mb-2`}>Main Providers</h2>
-									<h3 className={`text-void-fg-3 mb-2`}>{`Void can access models from Anthropic, OpenAI, OpenRouter, and more.`}</h3>
+									<h3 className={`text-void-fg-3 mb-2`}>{`veritIDE can access models from Anthropic, OpenAI, OpenRouter, and more.`}</h3>
 
 									<VoidProviderSettings providerNames={nonlocalProviderNames} />
 								</ErrorBoundary>
@@ -1353,7 +1401,7 @@ export const Settings = () => {
 
 										<div className='w-full'>
 											<h4 className={`text-base`}>Editor</h4>
-											<div className='text-sm text-void-fg-3 mt-1'>{`Settings that control the visibility of Void suggestions in the code editor.`}</div>
+											<div className='text-sm text-void-fg-3 mt-1'>{`Settings that control the visibility of veritIDE suggestions in the code editor.`}</div>
 
 											<div className='my-2'>
 												{/* Auto Accept Switch */}
@@ -1400,13 +1448,71 @@ export const Settings = () => {
 								</ErrorBoundary>
 							</div>
 
+							{/* Privacy section */}
+							<div className={shouldShowTab('privacy') ? `` : 'hidden'}>
+								<ErrorBoundary>
+									<h2 className='text-3xl mb-2'>Privacy & Network</h2>
+									<h4 className='text-void-fg-3 mb-4'>
+										veritIDE does not make outbound network calls unless you configure a provider below or enable an opt-in feature. LLM traffic goes only to endpoints you set.
+									</h4>
+
+									<div className='flex flex-col gap-4 max-w-[600px]'>
+										<div className='flex items-center gap-x-2'>
+											<VoidSwitch
+												size='xs'
+												value={settingsState.globalSettings.enableUsageMetrics}
+												onChange={(newVal) => voidSettingsService.setGlobalSetting('enableUsageMetrics', newVal)}
+											/>
+											<span className='text-void-fg-3 text-xs'>Anonymous usage metrics (opt-in)</span>
+										</div>
+
+										<div className='flex items-center gap-x-2'>
+											<VoidSwitch
+												size='xs'
+												value={settingsState.globalSettings.enableUpdateChecks}
+												onChange={(newVal) => voidSettingsService.setGlobalSetting('enableUpdateChecks', newVal)}
+											/>
+											<span className='text-void-fg-3 text-xs'>Automatic update checks (opt-in)</span>
+										</div>
+
+										<div className='flex items-center gap-x-2'>
+											<VoidSwitch
+												size='xs'
+												value={settingsState.globalSettings.enableCapabilityPacks}
+												onChange={(newVal) => voidSettingsService.setGlobalSetting('enableCapabilityPacks', newVal)}
+											/>
+											<span className='text-void-fg-3 text-xs'>Fetch capability packs from the network (opt-in)</span>
+										</div>
+
+										{settingsState.globalSettings.enableCapabilityPacks && (
+											<div className='flex flex-col gap-1'>
+												<span className='text-void-fg-3 text-xs'>Capability pack URL</span>
+												<VoidSimpleInputBox
+													className='text-xs'
+													initValue={settingsState.globalSettings.capabilityPackUrl}
+													placeholder='https://…/veritide-model-catalog.json'
+													onChangeText={(newText) => voidSettingsService.setGlobalSetting('capabilityPackUrl', newText)}
+												/>
+												<span className='text-void-fg-3 text-xs opacity-80'>
+													Offline bundled defaults always apply. User overrides: ~/.veritide/capabilities/user-catalog.json
+												</span>
+											</div>
+										)}
+
+										<div className='text-xs text-void-fg-3 opacity-80 mt-2'>
+											Extension marketplace, MCP servers, and configured LLM providers may still use the network when you use those features.
+										</div>
+									</div>
+								</ErrorBoundary>
+							</div>
+
 							{/* General section */}
 							<div className={`${shouldShowTab('general') ? `` : 'hidden'} flex flex-col gap-12`}>
 								{/* One-Click Switch section */}
 								<div>
 									<ErrorBoundary>
 										<h2 className='text-3xl mb-2'>One-Click Switch</h2>
-										<h4 className='text-void-fg-3 mb-4'>{`Transfer your editor settings into Void.`}</h4>
+										<h4 className='text-void-fg-3 mb-4'>{`Transfer your editor settings into veritIDE.`}</h4>
 
 										<div className='flex flex-col gap-2'>
 											<OneClickSwitchButton className='w-48' fromEditor="VS Code" />
@@ -1419,7 +1525,7 @@ export const Settings = () => {
 								{/* Import/Export section */}
 								<div>
 									<h2 className='text-3xl mb-2'>Import/Export</h2>
-									<h4 className='text-void-fg-3 mb-4'>{`Transfer Void's settings and chats in and out of Void.`}</h4>
+									<h4 className='text-void-fg-3 mb-4'>{`Transfer veritIDE settings and chats in and out of veritIDE.`}</h4>
 									<div className='flex flex-col gap-8'>
 										{/* Settings Subcategory */}
 										<div className='flex flex-col gap-2 max-w-48 w-full'>
@@ -1477,29 +1583,6 @@ export const Settings = () => {
 								</div>
 
 
-								{/* Metrics section */}
-								<div className='max-w-[600px]'>
-									<h2 className={`text-3xl mb-2`}>Metrics</h2>
-									<h4 className={`text-void-fg-3 mb-4`}>Very basic anonymous usage tracking helps us keep Void running smoothly. You may opt out below. Regardless of this setting, Void never sees your code, messages, or API keys.</h4>
-
-									<div className='my-2'>
-										{/* Disable All Metrics Switch */}
-										<ErrorBoundary>
-											<div className='flex items-center gap-x-2 my-2'>
-												<VoidSwitch
-													size='xs'
-													value={isOptedOut}
-													onChange={(newVal) => {
-														storageService.store(OPT_OUT_KEY, newVal, StorageScope.APPLICATION, StorageTarget.MACHINE)
-														metricsService.capture(`Set metrics opt-out to ${newVal}`, {}) // this only fires if it's enabled, so it's fine to have here
-													}}
-												/>
-												<span className='text-void-fg-3 text-xs pointer-events-none'>{'Opt-out (requires restart)'}</span>
-											</div>
-										</ErrorBoundary>
-									</div>
-								</div>
-
 								{/* AI Instructions section */}
 								<div className='max-w-[600px]'>
 									<h2 className={`text-3xl mb-2`}>AI Instructions</h2>
@@ -1529,7 +1612,7 @@ Alternatively, place a \`.voidrules\` file in the root of your workspace.
 											</div>
 										</ErrorBoundary>
 										<div className='text-void-fg-3 text-xs mt-1'>
-											{`When disabled, Void will not include anything in the system message except for content you specified above.`}
+											{`When disabled, veritIDE will not include anything in the system message except for content you specified above.`}
 										</div>
 									</div>
 								</div>

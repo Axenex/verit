@@ -1,0 +1,49 @@
+{
+	"capabilitiesSchemaVersion": 1,
+	"models": {
+		"ollama": {
+			"llama3": {
+				"contextWindow": 8192,
+				"supportsSystemMessage": "system-role",
+				"supportsFIM": false,
+				"specialToolFormat": "openai-style"
+			},
+			"codellama": {
+				"contextWindow": 16384,
+				"supportsSystemMessage": "system-role",
+				"supportsFIM": true,
+				"specialToolFormat": "openai-style"
+			},
+			"qwen2.5-coder": {
+				"contextWindow": 32768,
+				"supportsSystemMessage": "system-role",
+				"supportsFIM": true,
+				"specialToolFormat": "openai-style"
+			}
+		},
+		"openAICompatible": {
+			"*": {
+				"contextWindow": 32768,
+				"supportsSystemMessage": "system-role",
+				"supportsFIM": true,
+				"specialToolFormat": "openai-style"
+			}
+		},
+		"vLLM": {
+			"*": {
+				"contextWindow": 32768,
+				"supportsSystemMessage": "system-role",
+				"supportsFIM": true,
+				"specialToolFormat": "openai-style"
+			}
+		},
+		"lmStudio": {
+			"*": {
+				"contextWindow": 32768,
+				"supportsSystemMessage": "system-role",
+				"supportsFIM": false,
+				"specialToolFormat": "openai-style"
+			}
+		}
+	}
+}

@@ -9,6 +9,7 @@ import { registerWorkbenchContribution2, WorkbenchPhase } from '../../../common/
 
 import * as dom from '../../../../base/browser/dom.js';
 import { IMetricsService } from '../common/metricsService.js';
+import { IVoidSettingsService } from '../common/voidSettingsService.js';
 
 
 
@@ -25,29 +26,50 @@ class MetricsPollService extends Disposable implements IMetricsPollService {
 
 	static readonly ID = 'voidMetricsPollService';
 
+	private intervalID: number | null = null;
+	private pingCounter = 1;
 
-	private readonly intervalID: number
 	constructor(
 		@IMetricsService private readonly metricsService: IMetricsService,
+		@IVoidSettingsService private readonly voidSettingsService: IVoidSettingsService,
 	) {
-		super()
+		super();
 
-		// initial state
-		const { window } = dom.getActiveWindow()
-		let i = 1
+		const startOrStop = () => {
+			if (this.voidSettingsService.state.globalSettings.enableUsageMetrics) {
+				this._startPolling();
+			} else {
+				this._stopPolling();
+			}
+		};
 
+		this._register(this.voidSettingsService.onDidChangeState(() => startOrStop()));
+		this.voidSettingsService.waitForInitState.then(() => startOrStop()).catch(() => { /* non-fatal */ });
+	}
+
+	private _startPolling() {
+		if (this.intervalID !== null) {
+			return;
+		}
+		const { window } = dom.getActiveWindow();
 		this.intervalID = window.setInterval(() => {
-			this.metricsService.capture('Alive', { iv1: i })
-			i += 1
-		}, PING_EVERY_MS)
+			this.metricsService.capture('Alive', { iv1: this.pingCounter });
+			this.pingCounter += 1;
+		}, PING_EVERY_MS);
+	}
 
-
+	private _stopPolling() {
+		if (this.intervalID === null) {
+			return;
+		}
+		const { window } = dom.getActiveWindow();
+		window.clearInterval(this.intervalID);
+		this.intervalID = null;
 	}
 
 	override dispose() {
-		super.dispose()
-		const { window } = dom.getActiveWindow()
-		window.clearInterval(this.intervalID)
+		this._stopPolling();
+		super.dispose();
 	}
 
 

@@ -11,9 +11,9 @@ import { registerSingleton, InstantiationType } from '../../../../platform/insta
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { IMetricsService } from './metricsService.js';
-import { defaultProviderSettings, getModelCapabilities, ModelOverrides } from './modelCapabilities.js';
+import { getModelCapabilities, ModelOverrides } from './modelCapabilities.js';
 import { VOID_SETTINGS_STORAGE_KEY } from './storageKeys.js';
-import { defaultSettingsOfProvider, FeatureName, ProviderName, ModelSelectionOfFeature, SettingsOfProvider, SettingName, providerNames, ModelSelection, modelSelectionsEqual, featureNames, VoidStatefulModelInfo, GlobalSettings, GlobalSettingName, defaultGlobalSettings, ModelSelectionOptions, OptionsOfModelSelection, ChatMode, OverridesOfModel, defaultOverridesOfModel, MCPUserStateOfName as MCPUserStateOfName, MCPUserState } from './voidSettingsTypes.js';
+import { defaultSettingsOfProvider, FeatureName, ProviderName, ModelSelectionOfFeature, SettingsOfProvider, SettingName, providerNames, ModelSelection, modelSelectionsEqual, featureNames, VoidStatefulModelInfo, GlobalSettings, GlobalSettingName, defaultGlobalSettings, ModelSelectionOptions, OptionsOfModelSelection, ChatMode, OverridesOfModel, defaultOverridesOfModel, MCPUserStateOfName as MCPUserStateOfName, MCPUserState, providerSettingsAreFilled } from './voidSettingsTypes.js';
 
 
 // name is the name in the dropdown
@@ -151,7 +151,7 @@ const _validatedModelState = (state: Omit<VoidSettingsState, '_modelOptions'>): 
 	for (const providerName of providerNames) {
 		const settingsAtProvider = newSettingsOfProvider[providerName]
 
-		const didFillInProviderSettings = Object.keys(defaultProviderSettings[providerName]).every(key => !!settingsAtProvider[key as keyof typeof settingsAtProvider])
+		const didFillInProviderSettings = providerSettingsAreFilled(providerName, settingsAtProvider)
 
 		if (didFillInProviderSettings === settingsAtProvider._didFillInProviderSettings) continue
 
@@ -292,6 +292,12 @@ class VoidSettingsService extends Disposable implements IVoidSettingsService {
 			
 			// add autoAcceptLLMChanges feature
 			if (readS.globalSettings.autoAcceptLLMChanges === undefined) readS.globalSettings.autoAcceptLLMChanges = false;
+
+			// veritIDE privacy defaults (opt-in network features)
+			if (readS.globalSettings.enableUsageMetrics === undefined) readS.globalSettings.enableUsageMetrics = false;
+			if (readS.globalSettings.enableUpdateChecks === undefined) readS.globalSettings.enableUpdateChecks = false;
+			if (readS.globalSettings.enableCapabilityPacks === undefined) readS.globalSettings.enableCapabilityPacks = false;
+			if (!readS.globalSettings.capabilityPackUrl) readS.globalSettings.capabilityPackUrl = defaultGlobalSettings.capabilityPackUrl;
 		}
 		catch (e) {
 			readS = defaultState()
@@ -340,6 +346,7 @@ class VoidSettingsService extends Disposable implements IVoidSettingsService {
 		this.state = _stateWithMergedDefaultModels(this.state)
 		this.state = _validatedModelState(this.state);
 
+		this._metricsService.setOptOut(!this.state.globalSettings.enableUsageMetrics)
 
 		this._resolver();
 		this._onDidChangeState.fire();
@@ -424,6 +431,9 @@ class VoidSettingsService extends Disposable implements IVoidSettingsService {
 		// hooks
 		if (this.state.globalSettings.syncApplyToChat) this._onUpdate_syncApplyToChat()
 		if (this.state.globalSettings.syncSCMToChat) this._onUpdate_syncSCMToChat()
+		if (settingName === 'enableUsageMetrics') {
+			this._metricsService.setOptOut(!newVal)
+		}
 
 	}
 

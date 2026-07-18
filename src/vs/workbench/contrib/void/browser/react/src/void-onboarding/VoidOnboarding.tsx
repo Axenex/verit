@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAccessor, useIsDark, useSettingsState } from '../util/services.js';
 import { Brain, Check, ChevronRight, DollarSign, ExternalLink, Lock, X } from 'lucide-react';
-import { displayInfoOfProviderName, ProviderName, providerNames, localProviderNames, featureNames, FeatureName, isFeatureNameDisabled } from '../../../../common/voidSettingsTypes.js';
+import { displayInfoOfProviderName, ProviderName, providerNames, localProviderNames, featureNames, FeatureName, isFeatureNameDisabled, isLocalEndpoint } from '../../../../common/voidSettingsTypes.js';
 import { ChatMarkdownRender } from '../markdown/ChatMarkdownRender.js';
 import { OllamaSetupInstructions, OneClickSwitchButton, SettingsForProvider, ModelDump } from '../void-settings-tsx/Settings.js';
 import { ColorScheme } from '../../../../../../../platform/theme/common/theme.js';
@@ -236,7 +236,7 @@ const AddProvidersPage = ({ pageIndex, setPageIndex }: { pageIndex: number, setP
 					</div>
 
 					{currentTab === 'Local' && (
-						<div className="text-sm opacity-80 text-void-fg-3 my-4 w-full">Local models should be detected automatically. You can add custom models below.</div>
+						<div className="text-sm opacity-80 text-void-fg-3 my-4 w-full">Local models are detected automatically when your server is running. If offline, configure the endpoint and continue — you can refresh models later in Settings.</div>
 					)}
 
 					{currentTab === 'Local' && <ModelDump filteredProviders={localProviderNames} />}
@@ -255,14 +255,15 @@ const AddProvidersPage = ({ pageIndex, setPageIndex }: { pageIndex: number, setP
 					<PreviousButton onClick={() => setPageIndex(pageIndex - 1)} />
 					<NextButton
 						onClick={() => {
-							const isDisabled = isFeatureNameDisabled('Chat', settingsState)
+							const chatDisabled = isFeatureNameDisabled('Chat', settingsState)
+							const anyLocalProviderReady = localProviderNames.some(p => settingsState.settingsOfProvider[p]._didFillInProviderSettings)
+							const canProceed = !chatDisabled || (currentTab === 'Local' && anyLocalProviderReady)
 
-							if (!isDisabled) {
+							if (canProceed) {
 								setPageIndex(pageIndex + 1);
 								setErrorMessage(null);
 							} else {
-								// Show error message
-								setErrorMessage("Please set up at least one Chat model before moving on.");
+								setErrorMessage("Set up a Chat model, or configure a local provider endpoint to continue (models can be added later if your server is offline).");
 							}
 						}}
 					/>
@@ -519,7 +520,13 @@ const VoidOnboardingContent = () => {
 
 	const selectedProviderName = getSelectedProvider();
 	const didFillInProviderSettings = selectedProviderName && voidSettingsState.settingsOfProvider[selectedProviderName]._didFillInProviderSettings
-	const isApiKeyLongEnoughIfApiKeyExists = selectedProviderName && voidSettingsState.settingsOfProvider[selectedProviderName].apiKey ? voidSettingsState.settingsOfProvider[selectedProviderName].apiKey.length > 15 : true
+	const isApiKeyLongEnoughIfApiKeyExists = selectedProviderName && voidSettingsState.settingsOfProvider[selectedProviderName].apiKey
+		? (
+			selectedProviderName === 'openAICompatible' && isLocalEndpoint(voidSettingsState.settingsOfProvider.openAICompatible.endpoint ?? '')
+				? true
+				: voidSettingsState.settingsOfProvider[selectedProviderName].apiKey.length > 15
+		)
+		: true
 	const isAtLeastOneModel = selectedProviderName && voidSettingsState.settingsOfProvider[selectedProviderName].models.length >= 1
 
 	const didFillInSelectedProviderSettings = !!(didFillInProviderSettings && isApiKeyLongEnoughIfApiKeyExists && isAtLeastOneModel)
@@ -547,7 +554,7 @@ const VoidOnboardingContent = () => {
 					voidMetricsService.capture('Completed Onboarding', { selectedProviderName, wantToUseOption })
 				}}
 				ringSize={voidSettingsState.globalSettings.isOnboardingComplete ? 'screen' : undefined}
-			>Enter the Void</PrimaryActionButton>
+			>Enter veritIDE</PrimaryActionButton>
 		</div>
 	</div>
 
@@ -563,7 +570,7 @@ const VoidOnboardingContent = () => {
 	// can be md
 	const detailedDescOfWantToUseOption: { [wantToUseOption in WantToUseOption]: string } = {
 		smart: "Most intelligent and best for agent mode.",
-		private: "Private-hosted so your data never leaves your computer or network. [Email us](mailto:founders@voideditor.com) for help setting up at your company.",
+		private: "Private-hosted so your data never leaves your computer or network. [Open an issue](https://github.com/Axenex/verit/issues) for help setting up at your company.",
 		cheap: "Use great deals like Gemini 2.5 Pro, or self-host a model with Ollama or vLLM for free.",
 		all: "",
 	}
@@ -596,7 +603,7 @@ const VoidOnboardingContent = () => {
 		0: <OnboardingPageShell
 			content={
 				<div className='flex flex-col items-center gap-8'>
-					<div className="text-5xl font-light text-center">Welcome to Void</div>
+					<div className="text-5xl font-light text-center">Welcome to veritIDE</div>
 
 					{/* Slice of Void image */}
 					<div className='max-w-md w-full h-[30vh] mx-auto flex items-center justify-center'>
