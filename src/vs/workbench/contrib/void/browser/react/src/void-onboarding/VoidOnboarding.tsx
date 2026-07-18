@@ -15,10 +15,41 @@ import { isLinux } from '../../../../../../../base/common/platform.js';
 
 const OVERRIDE_VALUE = false
 
+function useStartupSplashDismissed(): boolean {
+	const [dismissed, setDismissed] = useState(() => {
+		const splash = window.__veritideStartupSplash;
+		return !splash || splash.dismissed;
+	});
+
+	useEffect(() => {
+		const splash = window.__veritideStartupSplash;
+		if (!splash || splash.dismissed) {
+			setDismissed(true);
+			return;
+		}
+		let cancelled = false;
+		splash.whenDismissed.then(() => {
+			if (!cancelled) {
+				setDismissed(true);
+			}
+		});
+		const onDismissed = () => setDismissed(true);
+		window.addEventListener('veritide-startup-splash-dismissed', onDismissed);
+		return () => {
+			cancelled = true;
+			window.removeEventListener('veritide-startup-splash-dismissed', onDismissed);
+		};
+	}, []);
+
+	return dismissed;
+}
+
 export const VoidOnboarding = () => {
 
 	const voidSettingsState = useSettingsState()
 	const isOnboardingComplete = voidSettingsState.globalSettings.isOnboardingComplete || OVERRIDE_VALUE
+	const splashDismissed = useStartupSplashDismissed()
+	const showOnboarding = !isOnboardingComplete && splashDismissed
 
 	const isDark = useIsDark()
 
@@ -27,7 +58,7 @@ export const VoidOnboarding = () => {
 			<div
 				className={`
 					bg-void-bg-3 fixed top-0 right-0 bottom-0 left-0 width-full z-[99999]
-					transition-all duration-1000 ${isOnboardingComplete ? 'opacity-0 pointer-events-none' : 'opacity-100 pointer-events-auto'}
+					transition-all duration-1000 ${showOnboarding ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}
 				`}
 				style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
 			>
