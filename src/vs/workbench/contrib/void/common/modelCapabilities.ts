@@ -31,6 +31,7 @@ export const defaultProviderSettings = {
 	},
 	godmode: { // G0DM0D3.ai - OpenAI-compatible multi-model gateway (https://godmod3.ai), routes through OpenRouter
 		apiKey: '',
+		openRouterApiKey: '',
 		endpoint: 'https://godmod3.ai/v1',
 	},
 	openAICompatible: {
@@ -145,8 +146,17 @@ export const defaultModelsOfProvider = {
 		'llama-3.1-8b-instant',
 		// 'qwen-2.5-coder-32b', // preview mode (experimental)
 	],
-	godmode: [ // G0DM0D3.ai - virtual ULTRAPLINIAN racing models + individual OpenRouter model IDs (https://github.com/elder-plinius/G0DM0D3/blob/main/API.md)
+	godmode: [ // G0DM0D3.ai - virtual ULTRAPLINIAN/CONSORTIUM models + individual OpenRouter IDs (https://github.com/elder-plinius/G0DM0D3/blob/main/API.md)
 		'ultraplinian/fast',
+		'ultraplinian/standard',
+		'ultraplinian/smart',
+		'ultraplinian/power',
+		'ultraplinian/ultra',
+		'consortium/fast',
+		'consortium/standard',
+		'consortium/smart',
+		'consortium/power',
+		'consortium/ultra',
 		'anthropic/claude-sonnet-4',
 		'anthropic/claude-3.5-sonnet',
 		'openai/gpt-4o',
@@ -1487,45 +1497,31 @@ const openRouterSettings: VoidStaticProviderInfo = {
 
 // ---------------- G0DM0D3 (godmode) ----------------
 // G0DM0D3.ai exposes an OpenAI-compatible gateway that proxies to OpenRouter. It adds "virtual"
-// ULTRAPLINIAN racing models (ultraplinian/fast|standard|smart|full) on top of the normal
-// OpenRouter model catalog. Individual models are recognized via the fallback below.
+// ULTRAPLINIAN racing models and CONSORTIUM orchestrator models on top of the OpenRouter catalog.
+// Individual models are recognized via the fallback below.
+const godmodeVirtualModelInfo = {
+	contextWindow: 128_000,
+	reservedOutputTokenSpace: null,
+	cost: { input: 0, output: 0 }, // usage-based via OpenRouter, not known ahead of time
+	downloadable: false,
+	supportsFIM: false,
+	supportsSystemMessage: 'system-role',
+	specialToolFormat: 'openai-style',
+	reasoningCapabilities: false,
+} as const satisfies VoidStaticModelInfo
+
 const godmodeModelOptions = {
-	'ultraplinian/fast': {
-		contextWindow: 128_000,
-		reservedOutputTokenSpace: null,
-		cost: { input: 0, output: 0 }, // usage-based via OpenRouter, not known ahead of time
-		downloadable: false,
-		supportsFIM: false,
-		supportsSystemMessage: 'system-role',
-		reasoningCapabilities: false,
-	},
-	'ultraplinian/standard': {
-		contextWindow: 128_000,
-		reservedOutputTokenSpace: null,
-		cost: { input: 0, output: 0 },
-		downloadable: false,
-		supportsFIM: false,
-		supportsSystemMessage: 'system-role',
-		reasoningCapabilities: false,
-	},
-	'ultraplinian/smart': {
-		contextWindow: 128_000,
-		reservedOutputTokenSpace: null,
-		cost: { input: 0, output: 0 },
-		downloadable: false,
-		supportsFIM: false,
-		supportsSystemMessage: 'system-role',
-		reasoningCapabilities: false,
-	},
-	'ultraplinian/full': {
-		contextWindow: 128_000,
-		reservedOutputTokenSpace: null,
-		cost: { input: 0, output: 0 },
-		downloadable: false,
-		supportsFIM: false,
-		supportsSystemMessage: 'system-role',
-		reasoningCapabilities: false,
-	},
+	'ultraplinian/fast': godmodeVirtualModelInfo,
+	'ultraplinian/standard': godmodeVirtualModelInfo,
+	'ultraplinian/smart': godmodeVirtualModelInfo,
+	'ultraplinian/power': godmodeVirtualModelInfo,
+	'ultraplinian/ultra': godmodeVirtualModelInfo,
+	'ultraplinian/full': godmodeVirtualModelInfo, // legacy alias still returned by some G0DM0D3 servers
+	'consortium/fast': godmodeVirtualModelInfo,
+	'consortium/standard': godmodeVirtualModelInfo,
+	'consortium/smart': godmodeVirtualModelInfo,
+	'consortium/power': godmodeVirtualModelInfo,
+	'consortium/ultra': godmodeVirtualModelInfo,
 } as const satisfies Record<string, VoidStaticModelInfo>
 
 const godmodeSettings: VoidStaticProviderInfo = {

@@ -56,6 +56,30 @@ export type ListParams_Internal<ModelResponse> = ModelListParams<ModelResponse>
 
 const invalidApiKeyMessage = (providerName: ProviderName) => `Invalid ${displayInfoOfProviderName(providerName).title} API key.`
 
+const resolveGodmodeOpenRouterApiKey = (settingsOfProvider: SettingsOfProvider): string | null => {
+	const godmodeConfig = settingsOfProvider.godmode
+	const key = godmodeConfig.openRouterApiKey || settingsOfProvider.openRouter.apiKey
+	return key || null
+}
+
+const validateGodmodeBeforeSend = (settingsOfProvider: SettingsOfProvider, onError: OnError): boolean => {
+	const godmodeConfig = settingsOfProvider.godmode
+	if (!godmodeConfig.apiKey) {
+		onError({ message: 'G0DM0D3 API key is required. Add it in Settings → G0DM0D3.', fullError: null })
+		return false
+	}
+	if (!resolveGodmodeOpenRouterApiKey(settingsOfProvider)) {
+		onError({ message: 'OpenRouter API key is required for G0DM0D3. Add an OpenRouter API key under G0DM0D3 settings, or configure the OpenRouter provider.', fullError: null })
+		return false
+	}
+	return true
+}
+
+const godmodeRequestExtensions = (settingsOfProvider: SettingsOfProvider): Record<string, unknown> => ({
+	openrouter_api_key: resolveGodmodeOpenRouterApiKey(settingsOfProvider)!,
+	contribute_to_dataset: false,
+})
+
 // ------------ OPENAI-COMPATIBLE (HELPERS) ------------
 
 
@@ -204,6 +228,10 @@ const _sendOpenAICompatibleFIM = async ({ messages: { prefix, suffix, stopTokens
 		return
 	}
 
+	if (providerName === 'godmode' && !validateGodmodeBeforeSend(settingsOfProvider, onError)) {
+		return
+	}
+
 	const openai = await newOpenAICompatibleSDK({ providerName, settingsOfProvider, includeInPayload: additionalOpenAIPayload })
 	openai.completions
 		.create({
@@ -212,6 +240,7 @@ const _sendOpenAICompatibleFIM = async ({ messages: { prefix, suffix, stopTokens
 			suffix: suffix,
 			stop: stopTokens,
 			max_tokens: 300,
+			...(providerName === 'godmode' ? godmodeRequestExtensions(settingsOfProvider) : {}),
 		})
 		.then(async response => {
 			const fullText = response.choices[0]?.text
@@ -305,6 +334,10 @@ const _sendOpenAICompatibleChat = async ({ messages, onText, onFinalMessage, onE
 		...additionalOpenAIPayload
 	}
 
+	if (providerName === 'godmode' && !validateGodmodeBeforeSend(settingsOfProvider, onError)) {
+		return
+	}
+
 	// tools
 	const potentialTools = openAITools(chatMode, mcpTools)
 	const nativeToolsObj = potentialTools && specialToolFormat === 'openai-style' ?
@@ -322,7 +355,8 @@ const _sendOpenAICompatibleChat = async ({ messages, onText, onFinalMessage, onE
 		messages: messages as any,
 		stream: true,
 		...nativeToolsObj,
-		...additionalOpenAIPayload
+		...additionalOpenAIPayload,
+		...(providerName === 'godmode' ? godmodeRequestExtensions(settingsOfProvider) : {}),
 		// max_completion_tokens: maxTokens,
 	}
 
@@ -930,7 +964,7 @@ export const sendLLMMessageToProviderImplementation = {
 	godmode: {
 		sendChat: (params) => _sendOpenAICompatibleChat(params),
 		sendFIM: (params) => _sendOpenAICompatibleFIM(params),
-		list: null,
+		list: (params) => _openaiCompatibleList(params),
 	},
 	vLLM: {
 		sendChat: (params) => _sendOpenAICompatibleChat(params),

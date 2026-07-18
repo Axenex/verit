@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------*/
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { MCPUserState, RefreshableProviderName, SettingsOfProvider } from '../../../../../../../workbench/contrib/void/common/voidSettingsTypes.js'
+import { MCPUserState, ModelRefreshProviderName, SettingsOfProvider } from '../../../../../../../workbench/contrib/void/common/voidSettingsTypes.js'
 import { DisposableStore, IDisposable } from '../../../../../../../base/common/lifecycle.js'
 import { VoidSettingsState } from '../../../../../../../workbench/contrib/void/common/voidSettingsService.js'
 import { ColorScheme } from '../../../../../../../platform/theme/common/theme.js'
@@ -74,7 +74,7 @@ const settingsStateListeners: Set<(s: VoidSettingsState) => void> = new Set()
 
 let refreshModelState: RefreshModelStateOfProvider
 const refreshModelStateListeners: Set<(s: RefreshModelStateOfProvider) => void> = new Set()
-const refreshModelProviderListeners: Set<(p: RefreshableProviderName, s: RefreshModelStateOfProvider) => void> = new Set()
+const refreshModelProviderListeners: Set<(p: ModelRefreshProviderName, s: RefreshModelStateOfProvider) => void> = new Set()
 
 let colorThemeState: ColorScheme
 const colorThemeStateListeners: Set<(s: ColorScheme) => void> = new Set()
@@ -332,7 +332,7 @@ export const useRefreshModelState = () => {
 }
 
 
-export const useRefreshModelListener = (listener: (providerName: RefreshableProviderName, s: RefreshModelStateOfProvider) => void) => {
+export const useRefreshModelListener = (listener: (providerName: ModelRefreshProviderName, s: RefreshModelStateOfProvider) => void) => {
 	useEffect(() => {
 		refreshModelProviderListeners.add(listener)
 		return () => { refreshModelProviderListeners.delete(listener) }
