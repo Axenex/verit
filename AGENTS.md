@@ -50,8 +50,24 @@ suffix; React OOM → `NODE_OPTIONS="--max-old-space-size=8192" npm run buildrea
   Since the veritIDE rebrand the installer basename is `VeritIDESetup` (`OutputBaseFilename` in
   `code.iss`); older artifacts were named `VoidSetup*.exe`.
 
-### Distribution pipeline (void-builder — upstream knowledge)
-- Official Void releases are NOT built from this repo directly. They come from
+### Upstream status: Void is DEPRECATED (announced 2026)
+- Upstream Void (`voideditor/void`) is deprecated and no longer accepts contributions. It stays
+  open source as a reference for VS Code forks; old versions remain downloadable from its
+  Releases, and a "Void Forks" list tracks successor projects.
+- Consequences for this fork (veritIDE): expect NO new upstream Void releases, rebases, or fixes.
+  Do not plan work around upstream PRs or upstream auto-update infra
+  (`voideditor/binaries` / `voideditor/versions` may go stale); auto-update must eventually point
+  at our own repos (see the "search Void/voideditor and replace" note below). Treat the
+  void-builder pipeline as reference material to fork, not a live service.
+- Upstream's own summary of what is worth reusing when forking VS Code: the React + Tailwind
+  mount (custom build-pipeline extension — plain VS Code can't do this); the GitHub Actions that
+  package, sign, and auto-update (VS Code's own build pipeline is private); the from-scratch AI
+  provider code (autocomplete/FIM, grammars for `<thinking>`/tool tags, IPC + CSP architecture);
+  and the editing services `EditCodeService` (streaming diffs, token by token) and
+  `VoidModelService` (background file edits synced with text buffers).
+
+### Distribution pipeline (void-builder — upstream knowledge, now frozen by deprecation)
+- Official Void releases were NOT built from this repo directly. They come from
   [`voideditor/void-builder`](https://github.com/voideditor/void-builder), a fork of VSCodium
   whose GitHub Actions workflows build all assets (.dmg, .zip, .exe, etc.), upload them to a
   release on `voideditor/binaries`, and write the latest version to a text file on
