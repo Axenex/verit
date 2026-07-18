@@ -7,7 +7,7 @@ import { IVoidSettingsService } from './voidSettingsService.js';
 import { ILLMMessageService } from './sendLLMMessageService.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { Disposable, IDisposable } from '../../../../base/common/lifecycle.js';
-import { RefreshableProviderName, refreshableProviderNames, SettingsOfProvider } from './voidSettingsTypes.js';
+import { manuallyRefreshableProviderNames, ModelRefreshProviderName, RefreshableProviderName, refreshableProviderNames, SettingsOfProvider } from './voidSettingsTypes.js';
 import { OllamaModelResponse, OpenaiCompatibleModelResponse } from './sendLLMMessageTypes.js';
 import { registerSingleton, InstantiationType } from '../../../../platform/instantiation/common/extensions.js';
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
@@ -39,7 +39,7 @@ user click -> error -> fire(error)
 poll -> do not fire
 
 */
-export type RefreshModelStateOfProvider = Record<RefreshableProviderName, RefreshableState>
+export type RefreshModelStateOfProvider = Record<ModelRefreshProviderName, RefreshableState>
 
 
 
@@ -64,8 +64,8 @@ function eq<T>(a: T[], b: T[]): boolean {
 }
 export interface IRefreshModelService {
 	readonly _serviceBrand: undefined;
-	startRefreshingModels: (providerName: RefreshableProviderName, options: { enableProviderOnSuccess: boolean, doNotFire: boolean }) => void;
-	onDidChangeState: Event<RefreshableProviderName>;
+	startRefreshingModels: (providerName: ModelRefreshProviderName, options: { enableProviderOnSuccess: boolean, doNotFire: boolean }) => void;
+	onDidChangeState: Event<ModelRefreshProviderName>;
 	state: RefreshModelStateOfProvider;
 }
 
@@ -75,8 +75,8 @@ export class RefreshModelService extends Disposable implements IRefreshModelServ
 
 	readonly _serviceBrand: undefined;
 
-	private readonly _onDidChangeState = new Emitter<RefreshableProviderName>();
-	readonly onDidChangeState: Event<RefreshableProviderName> = this._onDidChangeState.event; // this is primarily for use in react, so react can listen + update on state changes
+	private readonly _onDidChangeState = new Emitter<ModelRefreshProviderName>();
+	readonly onDidChangeState: Event<ModelRefreshProviderName> = this._onDidChangeState.event; // this is primarily for use in react, so react can listen + update on state changes
 
 
 	constructor(
@@ -145,6 +145,7 @@ export class RefreshModelService extends Disposable implements IRefreshModelServ
 		vLLM: { state: 'init', timeoutId: null },
 		lmStudio: { state: 'init', timeoutId: null },
 		openAICompatible: { state: 'init', timeoutId: null },
+		godmode: { state: 'init', timeoutId: null },
 	}
 
 
@@ -156,6 +157,7 @@ export class RefreshModelService extends Disposable implements IRefreshModelServ
 		this._setRefreshState(providerName, 'refreshing', options)
 
 		const autoPoll = () => {
+			if ((manuallyRefreshableProviderNames as string[]).includes(providerName)) return
 			if (this.voidSettingsService.state.globalSettings.autoRefreshModels) {
 				// resume auto-polling
 				const timeoutId = setTimeout(() => this.startRefreshingModels(providerName, autoOptions), REFRESH_INTERVAL)
@@ -173,7 +175,7 @@ export class RefreshModelService extends Disposable implements IRefreshModelServ
 					providerName,
 					models.map(model => {
 						if (providerName === 'ollama') return (model as OllamaModelResponse).name;
-						else if (providerName === 'vLLM' || providerName === 'lmStudio' || providerName === 'openAICompatible') {
+						else if (providerName === 'vLLM' || providerName === 'lmStudio' || providerName === 'openAICompatible' || providerName === 'godmode') {
 							return (model as OpenaiCompatibleModelResponse).id;
 						}
 						else throw new Error('refreshMode fn: unknown provider', providerName);
@@ -201,7 +203,7 @@ export class RefreshModelService extends Disposable implements IRefreshModelServ
 		}
 	}
 
-	_clearProviderTimeout(providerName: RefreshableProviderName) {
+	_clearProviderTimeout(providerName: ModelRefreshProviderName) {
 		// cancel any existing poll
 		if (this.state[providerName].timeoutId) {
 			clearTimeout(this.state[providerName].timeoutId)
@@ -209,11 +211,11 @@ export class RefreshModelService extends Disposable implements IRefreshModelServ
 		}
 	}
 
-	private _setTimeoutId(providerName: RefreshableProviderName, timeoutId: NodeJS.Timeout | null) {
+	private _setTimeoutId(providerName: ModelRefreshProviderName, timeoutId: NodeJS.Timeout | null) {
 		this.state[providerName].timeoutId = timeoutId
 	}
 
-	private _setRefreshState(providerName: RefreshableProviderName, state: RefreshableState['state'], options?: { doNotFire: boolean }) {
+	private _setRefreshState(providerName: ModelRefreshProviderName, state: RefreshableState['state'], options?: { doNotFire: boolean }) {
 		if (options?.doNotFire) return
 		this.state[providerName].state = state
 		this._onDidChangeState.fire(providerName)

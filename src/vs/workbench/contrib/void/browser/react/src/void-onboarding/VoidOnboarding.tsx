@@ -8,17 +8,48 @@ import { useAccessor, useIsDark, useSettingsState } from '../util/services.js';
 import { Brain, Check, ChevronRight, DollarSign, ExternalLink, Lock, X } from 'lucide-react';
 import { displayInfoOfProviderName, ProviderName, providerNames, localProviderNames, featureNames, FeatureName, isFeatureNameDisabled, isLocalEndpoint } from '../../../../common/voidSettingsTypes.js';
 import { ChatMarkdownRender } from '../markdown/ChatMarkdownRender.js';
-import { OllamaSetupInstructions, OneClickSwitchButton, SettingsForProvider, ModelDump } from '../void-settings-tsx/Settings.js';
+import { OllamaSetupInstructions, OneClickSwitchButton, SettingsForProvider, ModelDump, OllamaPullButton } from '../void-settings-tsx/Settings.js';
 import { ColorScheme } from '../../../../../../../platform/theme/common/theme.js';
 import ErrorBoundary from '../sidebar-tsx/ErrorBoundary.js';
 import { isLinux } from '../../../../../../../base/common/platform.js';
 
 const OVERRIDE_VALUE = false
 
+function useStartupSplashDismissed(): boolean {
+	const [dismissed, setDismissed] = useState(() => {
+		const splash = window.__veritideStartupSplash;
+		return !splash || splash.dismissed;
+	});
+
+	useEffect(() => {
+		const splash = window.__veritideStartupSplash;
+		if (!splash || splash.dismissed) {
+			setDismissed(true);
+			return;
+		}
+		let cancelled = false;
+		splash.whenDismissed.then(() => {
+			if (!cancelled) {
+				setDismissed(true);
+			}
+		});
+		const onDismissed = () => setDismissed(true);
+		window.addEventListener('veritide-startup-splash-dismissed', onDismissed);
+		return () => {
+			cancelled = true;
+			window.removeEventListener('veritide-startup-splash-dismissed', onDismissed);
+		};
+	}, []);
+
+	return dismissed;
+}
+
 export const VoidOnboarding = () => {
 
 	const voidSettingsState = useSettingsState()
 	const isOnboardingComplete = voidSettingsState.globalSettings.isOnboardingComplete || OVERRIDE_VALUE
+	const splashDismissed = useStartupSplashDismissed()
+	const showOnboarding = !isOnboardingComplete && splashDismissed
 
 	const isDark = useIsDark()
 
@@ -27,7 +58,7 @@ export const VoidOnboarding = () => {
 			<div
 				className={`
 					bg-void-bg-3 fixed top-0 right-0 bottom-0 left-0 width-full z-[99999]
-					transition-all duration-1000 ${isOnboardingComplete ? 'opacity-0 pointer-events-none' : 'opacity-100 pointer-events-auto'}
+					transition-all duration-1000 ${showOnboarding ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}
 				`}
 				style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
 			>
@@ -370,17 +401,11 @@ const OnboardingPageShell = ({ top, bottom, content, hasMaxWidth = true, classNa
 	)
 }
 
-const OllamaDownloadOrRemoveModelButton = ({ modelName, isModelInstalled, sizeGb }: { modelName: string, isModelInstalled: boolean, sizeGb: number | false | 'not-known' }) => {
-	// for now just link to the ollama download page
-	return <a
-		href={`https://ollama.com/library/${modelName}`}
-		target="_blank"
-		rel="noopener noreferrer"
-		className="flex items-center justify-center text-void-fg-2 hover:text-void-fg-1"
-	>
-		<ExternalLink className="w-3.5 h-3.5" />
-	</a>
-
+const OllamaDownloadOrRemoveModelButton = ({ modelName, isModelInstalled }: { modelName: string, isModelInstalled: boolean, sizeGb?: number | false | 'not-known' }) => {
+	if (isModelInstalled) {
+		return <span className="text-void-fg-3 text-xs">installed</span>
+	}
+	return <OllamaPullButton modelName={modelName} />
 }
 
 
@@ -511,7 +536,7 @@ const VoidOnboardingContent = () => {
 	}
 
 	const providerNamesOfWantToUseOption: { [wantToUseOption in WantToUseOption]: ProviderName[] } = {
-		smart: ['anthropic', 'openAI', 'gemini', 'openRouter'],
+		smart: ['anthropic', 'openAI', 'gemini', 'openRouter', 'godmode'],
 		private: ['ollama', 'vLLM', 'openAICompatible', 'lmStudio'],
 		cheap: ['gemini', 'deepseek', 'openRouter', 'ollama', 'vLLM'],
 		all: providerNames,

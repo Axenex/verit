@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------*/
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { MCPUserState, RefreshableProviderName, SettingsOfProvider } from '../../../../../../../workbench/contrib/void/common/voidSettingsTypes.js'
+import { MCPUserState, ModelRefreshProviderName, SettingsOfProvider } from '../../../../../../../workbench/contrib/void/common/voidSettingsTypes.js'
 import { DisposableStore, IDisposable } from '../../../../../../../base/common/lifecycle.js'
 import { VoidSettingsState } from '../../../../../../../workbench/contrib/void/common/voidSettingsService.js'
 import { ColorScheme } from '../../../../../../../platform/theme/common/theme.js'
@@ -52,7 +52,8 @@ import { IConvertToLLMMessageService } from '../../../convertToLLMMessageService
 import { ITerminalService } from '../../../../../terminal/browser/terminal.js'
 import { ISearchService } from '../../../../../../services/search/common/search.js'
 import { IExtensionManagementService } from '../../../../../../../platform/extensionManagement/common/extensionManagement.js'
-import { IMCPService } from '../../../../common/mcpService.js';
+import { IMCPService } from '../../../../common/mcpService.js'
+import { ICapabilityCatalogService } from '../../../../common/capabilityCatalogService.js';
 import { IStorageService, StorageScope } from '../../../../../../../platform/storage/common/storage.js'
 import { OPT_OUT_KEY } from '../../../../common/storageKeys.js'
 
@@ -73,7 +74,7 @@ const settingsStateListeners: Set<(s: VoidSettingsState) => void> = new Set()
 
 let refreshModelState: RefreshModelStateOfProvider
 const refreshModelStateListeners: Set<(s: RefreshModelStateOfProvider) => void> = new Set()
-const refreshModelProviderListeners: Set<(p: RefreshableProviderName, s: RefreshModelStateOfProvider) => void> = new Set()
+const refreshModelProviderListeners: Set<(p: ModelRefreshProviderName, s: RefreshModelStateOfProvider) => void> = new Set()
 
 let colorThemeState: ColorScheme
 const colorThemeStateListeners: Set<(s: ColorScheme) => void> = new Set()
@@ -229,6 +230,7 @@ const getReactAccessor = (accessor: ServicesAccessor) => {
 		IExtensionManagementService: accessor.get(IExtensionManagementService),
 		IExtensionTransferService: accessor.get(IExtensionTransferService),
 		IMCPService: accessor.get(IMCPService),
+		ICapabilityCatalogService: accessor.get(ICapabilityCatalogService),
 
 		IStorageService: accessor.get(IStorageService),
 
@@ -248,7 +250,7 @@ const _registerAccessor = (accessor: ServicesAccessor) => {
 // -- services --
 export const useAccessor = () => {
 	if (!reactAccessor_) {
-		throw new Error(`⚠️ Void useAccessor was called before _registerServices!`)
+		throw new Error(`⚠️ veritIDE useAccessor was called before _registerServices!`)
 	}
 
 	return { get: <S extends keyof ReactAccessor,>(service: S): ReactAccessor[S] => reactAccessor_![service] }
@@ -330,7 +332,7 @@ export const useRefreshModelState = () => {
 }
 
 
-export const useRefreshModelListener = (listener: (providerName: RefreshableProviderName, s: RefreshModelStateOfProvider) => void) => {
+export const useRefreshModelListener = (listener: (providerName: ModelRefreshProviderName, s: RefreshModelStateOfProvider) => void) => {
 	useEffect(() => {
 		refreshModelProviderListeners.add(listener)
 		return () => { refreshModelProviderListeners.delete(listener) }

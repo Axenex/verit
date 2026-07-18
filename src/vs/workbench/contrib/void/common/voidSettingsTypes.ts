@@ -119,7 +119,7 @@ export const subTextMdOfProviderName = (providerName: ProviderName): string => {
 	if (providerName === 'openAI') return 'Get your [API Key here](https://platform.openai.com/api-keys).'
 	if (providerName === 'deepseek') return 'Get your [API Key here](https://platform.deepseek.com/api_keys).'
 	if (providerName === 'openRouter') return 'Get your [API Key here](https://openrouter.ai/settings/keys). Read about [rate limits here](https://openrouter.ai/docs/api-reference/limits).'
-	if (providerName === 'godmode') return 'Connect to [G0DM0D3.ai](https://godmod3.ai), an OpenAI-compatible gateway to 50+ models. Paste your G0DM0D3 key, or point the Endpoint at a self-hosted server. Read the [API docs here](https://github.com/elder-plinius/G0DM0D3/blob/main/API.md).'
+	if (providerName === 'godmode') return 'Connect to [G0DM0D3.ai](https://godmod3.ai), an OpenAI-compatible gateway to 50+ models. You need **two keys**: a G0DM0D3 API key (Bearer auth) and an [OpenRouter API key](https://openrouter.ai/settings/keys) (passed per-request as `openrouter_api_key`). If you already configured OpenRouter below, you can leave the OpenRouter key blank here. Read the [API docs](https://github.com/elder-plinius/G0DM0D3/blob/main/API.md).'
 	if (providerName === 'gemini') return 'Get your [API Key here](https://aistudio.google.com/apikey). Read about [rate limits here](https://ai.google.dev/gemini-api/docs/rate-limits#current-rate-limits).'
 	if (providerName === 'groq') return 'Get your [API Key here](https://console.groq.com/keys).'
 	if (providerName === 'xAI') return 'Get your [API Key here](https://console.x.ai).'
@@ -163,6 +163,13 @@ export const displayInfoOfSettingName = (providerName: ProviderName, settingName
 														providerName === 'awsBedrock' ? 'key-...' :
 															'',
 
+			isPasswordField: true,
+		}
+	}
+	else if (settingName === 'openRouterApiKey') {
+		return {
+			title: 'OpenRouter API Key',
+			placeholder: 'sk-or-key...',
 			isPasswordField: true,
 		}
 	}
@@ -243,6 +250,7 @@ export const displayInfoOfSettingName = (providerName: ProviderName, settingName
 
 const defaultCustomSettings: Record<CustomSettingName, undefined> = {
 	apiKey: undefined,
+	openRouterApiKey: undefined,
 	endpoint: undefined,
 	region: undefined, // googleVertex
 	project: undefined,
@@ -402,6 +410,11 @@ export const displayInfoOfFeatureName = (featureName: FeatureName) => {
 export const refreshableProviderNames = localProviderNames
 export type RefreshableProviderName = typeof refreshableProviderNames[number]
 
+// manual-only refresh (no auto-polling) — remote providers where we should not hit the API every 5s
+export const manuallyRefreshableProviderNames = ['godmode'] as const satisfies ProviderName[]
+export type ManuallyRefreshableProviderName = typeof manuallyRefreshableProviderNames[number]
+export type ModelRefreshProviderName = RefreshableProviderName | ManuallyRefreshableProviderName
+
 /** True when endpoint points at localhost or a private LAN address. */
 export const isLocalEndpoint = (endpoint: string): boolean => {
 	if (!endpoint?.trim()) {
@@ -437,6 +450,10 @@ export const providerSettingsAreFilled = (providerName: ProviderName, settings: 
 			if (isLocalEndpoint(endpoint)) {
 				continue;
 			}
+		}
+		if (providerName === 'godmode' && key === 'openRouterApiKey') {
+			// optional — falls back to the OpenRouter provider key at request time
+			continue;
 		}
 		if (!val) {
 			return false;

@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------*/
 
 import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react'; // Added useRef import just in case it was missed, though likely already present
-import { ProviderName, SettingName, displayInfoOfSettingName, providerNames, VoidStatefulModelInfo, customSettingNamesOfProvider, RefreshableProviderName, refreshableProviderNames, displayInfoOfProviderName, nonlocalProviderNames, localProviderNames, GlobalSettingName, featureNames, displayInfoOfFeatureName, isProviderNameDisabled, FeatureName, hasDownloadButtonsOnModelsProviderNames, subTextMdOfProviderName } from '../../../../common/voidSettingsTypes.js'
+import { ManuallyRefreshableProviderName, manuallyRefreshableProviderNames, ModelRefreshProviderName, ProviderName, SettingName, displayInfoOfSettingName, providerNames, VoidStatefulModelInfo, customSettingNamesOfProvider, refreshableProviderNames, displayInfoOfProviderName, nonlocalProviderNames, localProviderNames, GlobalSettingName, featureNames, displayInfoOfFeatureName, isProviderNameDisabled, FeatureName, hasDownloadButtonsOnModelsProviderNames, subTextMdOfProviderName } from '../../../../common/voidSettingsTypes.js'
 import ErrorBoundary from '../sidebar-tsx/ErrorBoundary.js'
 import { VoidButtonBgDarken, VoidCustomDropdownBox, VoidInputBox2, VoidSimpleInputBox, VoidSwitch } from '../util/inputs.js'
 import { useAccessor, useIsDark, useRefreshModelListener, useRefreshModelState, useSettingsState } from '../util/services.js'
@@ -17,7 +17,7 @@ import { os } from '../../../../common/helpers/systemInfo.js'
 import { IconLoading } from '../sidebar-tsx/SidebarChat.js'
 import { ToolApprovalType, toolApprovalTypes } from '../../../../common/toolsServiceTypes.js'
 import Severity from '../../../../../../../base/common/severity.js'
-import { getModelCapabilities, modelOverrideKeys, ModelOverrides, ollamaRecommendedModels } from '../../../../common/modelCapabilities.js';
+import { getModelCapabilities, modelOverrideKeys, ModelOverrides, ollamaRecommendedModels, capabilityPresets, CapabilityPresetName } from '../../../../common/modelCapabilities.js';
 import { TransferEditorType, TransferFilesInfo } from '../../../extensionTransferTypes.js';
 import { MCPServer } from '../../../../common/mcpServiceTypes.js';
 import { useMCPServiceState } from '../util/services.js';
@@ -44,7 +44,7 @@ const ButtonLeftTextRightOption = ({ text, leftButton }: { text: string, leftBut
 }
 
 // models
-const RefreshModelButton = ({ providerName }: { providerName: RefreshableProviderName }) => {
+const RefreshModelButton = ({ providerName }: { providerName: ModelRefreshProviderName }) => {
 
 	const refreshModelState = useRefreshModelState()
 
@@ -145,10 +145,16 @@ const RefreshableModels = () => {
 	const settingsState = useSettingsState()
 
 
-	const buttons = refreshableProviderNames.map(providerName => {
-		if (!settingsState.settingsOfProvider[providerName]._didFillInProviderSettings) return null
-		return <RefreshModelButton key={providerName} providerName={providerName} />
-	})
+	const buttons = [
+		...refreshableProviderNames.map(providerName => {
+			if (!settingsState.settingsOfProvider[providerName]._didFillInProviderSettings) return null
+			return <RefreshModelButton key={providerName} providerName={providerName} />
+		}),
+		...manuallyRefreshableProviderNames.map(providerName => {
+			if (!settingsState.settingsOfProvider[providerName]._didFillInProviderSettings) return null
+			return <RefreshModelButton key={providerName} providerName={providerName} />
+		}),
+	]
 
 	return <>
 		{buttons}
@@ -289,6 +295,8 @@ const SimpleModelSettingsDialog = ({
 		if (!isOpen) return;
 		const cur = settingsState.overridesOfModel?.[providerName]?.[modelName];
 		setOverrideEnabled(!!cur);
+		setFormValues(initialFormValues());
+		setShowAdvancedJson(false);
 		setErrorMsg(null);
 	}, [isOpen, providerName, modelName, settingsState.overridesOfModel, placeholder]);
 
@@ -300,36 +308,62 @@ const SimpleModelSettingsDialog = ({
 			return;
 		}
 
-		// enabled overrides
-		// parse json
-		let parsedInput: Record<string, unknown>
+		// enabled overrides — merge form values with optional advanced JSON
+		let cleaned: Partial<ModelOverrides> = { ...formValues };
 
-		if (textAreaRef.current?.value) {
+		if (showAdvancedJson && textAreaRef.current?.value) {
 			try {
-				parsedInput = JSON.parse(textAreaRef.current.value);
+				const parsedInput = JSON.parse(textAreaRef.current.value) as Record<string, unknown>
+				for (const k of modelOverrideKeys) {
+					if (!(k in parsedInput)) continue
+					const isEmpty = parsedInput[k] === '' || parsedInput[k] === null || parsedInput[k] === undefined;
+					if (!isEmpty) {
+						cleaned[k] = parsedInput[k] as any;
+					}
+				}
 			} catch (e) {
-				setErrorMsg('Invalid JSON');
+				setErrorMsg('Invalid JSON in advanced section');
 				return;
 			}
-		} else {
-			setErrorMsg('Invalid JSON');
-			return;
 		}
 
-		// only keep allowed keys
-		const cleaned: Partial<ModelOverrides> = {};
-		for (const k of modelOverrideKeys) {
-			if (!(k in parsedInput)) continue
-			const isEmpty = parsedInput[k] === '' || parsedInput[k] === null || parsedInput[k] === undefined;
-			if (!isEmpty) {
-				cleaned[k] = parsedInput[k] as any;
+		// drop empty entries
+		for (const k of Object.keys(cleaned) as (keyof ModelOverrides)[]) {
+			const v = cleaned[k]
+			if (v === '' || v === null || v === undefined) {
+				delete cleaned[k]
 			}
 		}
+
 		await settingsStateService.setOverridesOfModel(providerName, modelName, cleaned);
 		onClose();
 	};
 
-	const sourcecodeOverridesLink = `https://github.com/voideditor/void/blob/2e5ecb291d33afbe4565921664fb7e183189c1c5/src/vs/workbench/contrib/void/common/modelCapabilities.ts#L146-L172`
+	const sourcecodeOverridesLink = `https://github.com/Axenex/verit/blob/main/src/vs/workbench/contrib/void/common/modelCapabilities.ts`
+
+	const initialFormValues = (): Partial<ModelOverrides> => {
+		const base = { ...partialDefaults, ...currentOverrides }
+		return {
+			contextWindow: base.contextWindow ?? defaultModelCapabilities.contextWindow,
+			supportsFIM: base.supportsFIM ?? defaultModelCapabilities.supportsFIM,
+			specialToolFormat: base.specialToolFormat ?? defaultModelCapabilities.specialToolFormat,
+			supportsSystemMessage: base.supportsSystemMessage ?? defaultModelCapabilities.supportsSystemMessage,
+			reservedOutputTokenSpace: base.reservedOutputTokenSpace ?? defaultModelCapabilities.reservedOutputTokenSpace,
+		}
+	}
+
+	const [formValues, setFormValues] = useState<Partial<ModelOverrides>>(() => initialFormValues())
+	const [showAdvancedJson, setShowAdvancedJson] = useState(false)
+
+	const applyPreset = (preset: CapabilityPresetName) => {
+		setOverrideEnabled(true)
+		setFormValues({ ...formValues, ...capabilityPresets[preset] })
+	}
+
+	const updateFormValue = <K extends keyof ModelOverrides>(key: K, value: ModelOverrides[K] | undefined) => {
+		setFormValues(prev => ({ ...prev, [key]: value }))
+		setOverrideEnabled(true)
+	}
 
 	return (
 		<div // Backdrop
@@ -380,19 +414,63 @@ const SimpleModelSettingsDialog = ({
 					<span className="text-void-fg-3 text-sm">Override model defaults</span>
 				</div>
 
+				{overrideEnabled && <>
+					<div className="flex flex-wrap gap-2 mb-4">
+						<span className="text-void-fg-3 text-xs w-full">Presets</span>
+						{(Object.keys(capabilityPresets) as CapabilityPresetName[]).map(preset => (
+							<VoidButtonBgDarken key={preset} className="px-2 py-1 text-xs capitalize" onClick={() => applyPreset(preset)}>
+								{preset}
+							</VoidButtonBgDarken>
+						))}
+					</div>
+
+					<div className="grid grid-cols-1 gap-3 mb-4 text-sm">
+						<label className="flex flex-col gap-1">
+							<span className="text-void-fg-3 text-xs">Context window (tokens)</span>
+							<VoidSimpleInputBox
+								className="text-xs"
+								initValue={String(formValues.contextWindow ?? '')}
+								placeholder={String(defaultModelCapabilities.contextWindow)}
+								onChangeText={(v) => updateFormValue('contextWindow', v ? Number(v) : undefined)}
+							/>
+						</label>
+						<div className="flex items-center gap-2">
+							<VoidSwitch size='xs' value={!!formValues.supportsFIM} onChange={(v) => updateFormValue('supportsFIM', v)} />
+							<span className="text-void-fg-3 text-xs">Supports FIM (autocomplete)</span>
+						</div>
+						<label className="flex flex-col gap-1">
+							<span className="text-void-fg-3 text-xs">Tool call format</span>
+							<VoidCustomDropdownBox
+								className='text-xs text-void-fg-3 bg-void-bg-1 border border-void-border-1 rounded p-0.5 px-1'
+								options={['openai-style', 'anthropic-style', 'gemini-style'] as const}
+								selectedOption={formValues.specialToolFormat ?? defaultModelCapabilities.specialToolFormat ?? 'openai-style'}
+								onChangeOption={(v) => updateFormValue('specialToolFormat', v)}
+								getOptionDisplayName={(v) => v}
+								getOptionDropdownName={(v) => v}
+								getOptionDropdownDetail={() => ''}
+								getOptionsEqual={(a, b) => a === b}
+							/>
+						</label>
+					</div>
+
+					<div className="flex items-center gap-2 mb-2">
+						<VoidSwitch size='xs' value={showAdvancedJson} onChange={setShowAdvancedJson} />
+						<span className="text-void-fg-3 text-xs">Advanced JSON overrides</span>
+					</div>
+				</>}
+
 				{/* Informational link */}
-				{overrideEnabled && <div className="text-sm text-void-fg-3 mb-4">
-					<ChatMarkdownRender string={`See the [sourcecode](${sourcecodeOverridesLink}) for a reference on how to set this JSON (advanced).`} chatMessageLocation={undefined} />
+				{overrideEnabled && showAdvancedJson && <div className="text-sm text-void-fg-3 mb-4">
+					<ChatMarkdownRender string={`See the [source code](${sourcecodeOverridesLink}) for all override keys.`} chatMessageLocation={undefined} />
 				</div>}
 
-				<textarea
+				{overrideEnabled && showAdvancedJson && <textarea
 					key={overrideEnabled + ''}
 					ref={textAreaRef}
-					className={`w-full min-h-[200px] p-2 rounded-sm border border-void-border-2 bg-void-bg-2 resize-none font-mono text-sm ${!overrideEnabled ? 'text-void-fg-3' : ''}`}
-					defaultValue={overrideEnabled && currentOverrides ? JSON.stringify(currentOverrides, null, 2) : placeholder}
+					className={`w-full min-h-[200px] p-2 rounded-sm border border-void-border-2 bg-void-bg-2 resize-none font-mono text-sm`}
+					defaultValue={currentOverrides ? JSON.stringify({ ...formValues, ...currentOverrides }, null, 2) : JSON.stringify(formValues, null, 2)}
 					placeholder={placeholder}
-					readOnly={!overrideEnabled}
-				/>
+				/>}
 				{errorMsg && (
 					<div className="text-red-500 mt-2 text-sm">{errorMsg}</div>
 				)}
@@ -866,6 +944,38 @@ const FastApplyMethodDropdown = () => {
 }
 
 
+export const OllamaPullButton = ({ modelName }: { modelName: string }) => {
+	const accessor = useAccessor()
+	const llmMessageService = accessor.get('ILLMMessageService')
+	const refreshModelService = accessor.get('IRefreshModelService')
+	const [state, setState] = useState<'idle' | 'pulling' | 'done' | 'error'>('idle')
+	const [status, setStatus] = useState('')
+
+	return <VoidButtonBgDarken
+		className="px-2 py-0.5 text-xs shrink-0"
+		disabled={state === 'pulling'}
+		onClick={() => {
+			setState('pulling')
+			setStatus('')
+			llmMessageService.ollamaPull({
+				modelName,
+				onProgress: ({ status: s }) => setStatus(s),
+				onSuccess: () => {
+					setState('done')
+					refreshModelService.startRefreshingModels('ollama', { enableProviderOnSuccess: true, doNotFire: false })
+					setTimeout(() => setState('idle'), 2500)
+				},
+				onError: () => setState('error'),
+			})
+		}}
+	>
+		{state === 'pulling' ? (status ? `Pulling… ${status}` : 'Pulling…')
+			: state === 'done' ? 'Pulled!'
+				: state === 'error' ? 'Failed — retry'
+					: 'Pull'}
+	</VoidButtonBgDarken>
+}
+
 export const OllamaSetupInstructions = ({ sayWeAutoDetect }: { sayWeAutoDetect?: boolean }) => {
 	// slug used by the ollama.com model library (drop the ":tag" suffix), e.g. 'qwen2.5-coder:1.5b' -> 'qwen2.5-coder'
 	const librarySlugOfModel = (modelName: string) => modelName.split(':')[0]
@@ -877,13 +987,15 @@ export const OllamaSetupInstructions = ({ sayWeAutoDetect }: { sayWeAutoDetect?:
 			className='pl-6 flex items-center w-fit'
 			data-tooltip-id='void-tooltip-ollama-settings'
 		>
-			<ChatMarkdownRender string={`3. Run \`ollama pull your_model\` to install a model, or pick a recommended coding model below.`} chatMessageLocation={undefined} />
+			<ChatMarkdownRender string={`3. Pull a model below (in-app) or run \`ollama pull your_model\` in a terminal.`} chatMessageLocation={undefined} />
 		</div>
 		<div className=' pl-6 mt-1'><ChatMarkdownRender string={`Recommended for local coding:`} chatMessageLocation={undefined} /></div>
 		<div className=' pl-6'>
 			{ollamaRecommendedModels.map((modelName) => (
-				<div key={modelName} className='flex items-center gap-2'>
-					<ChatMarkdownRender string={`- \`ollama pull ${modelName}\` ([details](https://ollama.com/library/${librarySlugOfModel(modelName)}))`} chatMessageLocation={undefined} />
+				<div key={modelName} className='flex items-center gap-2 my-1'>
+					<span className='text-void-fg-3 text-sm font-mono'>{modelName}</span>
+					<OllamaPullButton modelName={modelName} />
+					<a href={`https://ollama.com/library/${librarySlugOfModel(modelName)}`} target="_blank" rel="noopener noreferrer" className='text-xs text-void-fg-3 hover:text-void-fg-1 underline'>docs</a>
 				</div>
 			))}
 		</div>
@@ -1498,6 +1610,13 @@ export const Settings = () => {
 												</span>
 											</div>
 										)}
+
+										<VoidButtonBgDarken
+											className='px-3 py-1 text-xs w-fit'
+											onClick={() => accessor.get('ICapabilityCatalogService').refreshCatalogs()}
+										>
+											Refresh capability catalog
+										</VoidButtonBgDarken>
 
 										<div className='text-xs text-void-fg-3 opacity-80 mt-2'>
 											Extension marketplace, MCP servers, and configured LLM providers may still use the network when you use those features.
