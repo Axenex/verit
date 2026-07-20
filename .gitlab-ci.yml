@@ -3,7 +3,8 @@
 # Stages:
 #   validate — Linux: npm ci, buildreact, compile
 #   test     — Linux: Node unit tests against out/
-#   package  — Windows: portable Void win32-x64 zip (SaaS Windows runner)
+#   package  — Windows: portable zip + VoidSetup/UserSetup .exe installers
+#              (SaaS Windows runner; verifies Void AI features are packaged)
 #
 # Intentionally omitted for now:
 #   - Full ESLint (fails on the unchanged baseline per project guidance)
@@ -123,6 +124,8 @@ build:windows:
     # Branch pushes (CI_COMMIT_BRANCH) and MR pipelines (source branch name).
     - if: $CI_COMMIT_BRANCH =~ /^Axen\/gitlab-windows-build-/
     - if: $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^Axen\/gitlab-windows-build-/
+    - if: $CI_COMMIT_BRANCH =~ /^Axen\/windows-/
+    - if: $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^Axen\/windows-/
     - if: $CI_COMMIT_TAG
     - if: $CI_PIPELINE_SOURCE == "web"
       when: manual
@@ -209,20 +212,52 @@ build:windows:
       $env:VSCODE_SKIP_REMOTE_DEPENDENCIES = '1'
       node build/npm/postinstall.js
     - npm run buildreact
+    # Fail early if Void React UI entries were not emitted (AI sidebar/onboarding/settings).
+    - |
+      $ErrorActionPreference = 'Stop'
+      $reactOut = Join-Path $env:CI_PROJECT_DIR 'src\vs\workbench\contrib\void\browser\react\out'
+      $entries = @(
+        'sidebar-tsx\index.js',
+        'void-settings-tsx\index.js',
+        'void-onboarding\index.js',
+        'quick-edit-tsx\index.js',
+        'void-editor-widgets-tsx\index.js',
+        'void-tooltip\index.js',
+        'diff\index.js'
+      )
+      foreach ($rel in $entries) {
+        $p = Join-Path $reactOut $rel
+        if (-not (Test-Path -LiteralPath $p)) { throw "Missing Void React bundle after buildreact: $p" }
+        Write-Host "OK react out $rel"
+      }
     - npm run download-builtin-extensions
     - npm run gulp vscode-win32-x64
     - New-Item -ItemType Directory -Force -Path dist | Out-Null
     - |
+      $ErrorActionPreference = 'Stop'
       $out = Join-Path $env:CI_PROJECT_DIR '..\VSCode-win32-x64'
       if (-not (Test-Path $out)) { throw "Expected build output missing: $out" }
       Compress-Archive -Path (Join-Path $out '*') -DestinationPath 'dist\Void-win32-x64.zip' -Force
       Get-Item 'dist\Void-win32-x64.zip' | Format-List FullName, Length
-    # Best-effort Inno Setup installers (non-fatal)
-    - npm run gulp vscode-win32-x64-inno-updater; if ($LASTEXITCODE -ne 0) { Write-Host "inno-updater failed (non-fatal)" }
-    - npm run gulp vscode-win32-x64-system-setup; if ($LASTEXITCODE -ne 0) { Write-Host "system-setup failed (non-fatal)" }
-    - npm run gulp vscode-win32-x64-user-setup; if ($LASTEXITCODE -ne 0) { Write-Host "user-setup failed (non-fatal)" }
-    - if (Test-Path '.build\win32-x64\system-setup\VSCodeSetup.exe') { Copy-Item '.build\win32-x64\system-setup\VSCodeSetup.exe' 'dist\VoidSetup-x64.exe' }
-    - if (Test-Path '.build\win32-x64\user-setup\VSCodeSetup.exe') { Copy-Item '.build\win32-x64\user-setup\VSCodeSetup.exe' 'dist\VoidUserSetup-x64.exe' }
+      # Verify AI IDE features are present in the packaged app before building installers.
+      & "$env:CI_PROJECT_DIR\scripts\verify-void-win32-package.ps1" -AppDir $out
+    # Inno Setup system + user installers (required; this is the Windows desktop .exe)
+    - npm run gulp vscode-win32-x64-inno-updater
+    - npm run gulp vscode-win32-x64-system-setup
+    - npm run gulp vscode-win32-x64-user-setup
+    - |
+      $ErrorActionPreference = 'Stop'
+      $systemSetup = '.build\win32-x64\system-setup\VSCodeSetup.exe'
+      $userSetup = '.build\win32-x64\user-setup\VSCodeSetup.exe'
+      if (-not (Test-Path -LiteralPath $systemSetup)) { throw "Missing system installer: $systemSetup" }
+      if (-not (Test-Path -LiteralPath $userSetup)) { throw "Missing user installer: $userSetup" }
+      Copy-Item $systemSetup 'dist\VoidSetup-x64.exe' -Force
+      Copy-Item $userSetup 'dist\VoidUserSetup-x64.exe' -Force
+      Get-Item 'dist\VoidSetup-x64.exe','dist\VoidUserSetup-x64.exe' | Format-List FullName, Length
+      & "$env:CI_PROJECT_DIR\scripts\verify-void-win32-package.ps1" `
+        -AppDir (Join-Path $env:CI_PROJECT_DIR '..\VSCode-win32-x64') `
+        -DistDir (Join-Path $env:CI_PROJECT_DIR 'dist') `
+        -RequireInstallers
   artifacts:
     name: "void-win32-x64-$CI_COMMIT_SHORT_SHA"
     paths:
